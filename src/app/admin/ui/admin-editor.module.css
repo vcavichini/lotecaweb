@@ -1,0 +1,182 @@
+.shell {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  padding: 16px 0 40px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.28rem;
+  line-height: 1.05;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ghostLink {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--stroke);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.panel + .panel {
+  margin-top: 16px;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.button,
+.dangerButton,
+.primaryButton {
+  appearance: none;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--text-main);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.dangerButton {
+  color: var(--danger);
+}
+
+.betRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--stroke);
+}
+
+.betRow:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.numberInput {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: var(--panel-strong);
+  color: var(--text-main);
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.contestBlock {
+  border-top: 1px solid var(--stroke);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.contestBlock:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.contestHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.contestTitle {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.footerBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.status {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.statusDirty {
+  color: var(--danger);
+}
+
+@media (max-width: 420px) {
+  .shell {
+    width: min(100%, calc(100% - 16px));
+  }
+
+  .header,
+  .panelHeader,
+  .contestHeader,
+  .footerBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headerActions {
+    justify-content: space-between;
+  }
+
+  .button,
+  .dangerButton,
+  .primaryButton {
+    width: 100%;
+    text-align: center;
+  }
+}
