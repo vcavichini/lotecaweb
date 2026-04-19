@@ -73,6 +73,11 @@ function normalizeProxyApiData(data: ProxyApiData): ContestData {
   };
 }
 
+function logContestSource(strategy: "api-first" | "db-first", source: "api" | "db", contestNumber: string, context: string): void {
+  const label = contestNumber === "" ? "latest" : contestNumber;
+  console.log(`[lottery] source=${source} strategy=${strategy} contest=${label} ${context}`);
+}
+
 /**
  * Fetch contest data from APIs (without caching)
  * Used internally by fetchContestData
@@ -115,51 +120,58 @@ async function fetchContestFromApi(contestNumber = ""): Promise<ContestData> {
   throw new Error("Todas as APIs de loteria estão indisponíveis. Tente novamente mais tarde.");
 }
 
-// How long to trust cached latest contest data before re-fetching (ms)
-const LATEST_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-
 /**
  * Fetch contest data with SQLite caching
- * - For latest contest (empty string): check DB first, use cached if fresh (<2min), otherwise fetch from API
+ * - For latest contest (empty string): always try API first, fall back to cached data if APIs fail
  * - For specific contest number: check DB first, if not found, fetch from API and save
  */
 export async function fetchContestData(contestNumber = ""): Promise<ContestData> {
   validateContestNumber(contestNumber);
 
-  // For specific contest number: check cache first
+  // For specific contest number: check cache first (static data, never changes)
   if (contestNumber !== "") {
     const num = parseInt(contestNumber, 10);
     const cached = getContest(num);
     if (cached) {
-      console.log(`[lottery] Cache hit for contest ${num}`);
+      logContestSource("db-first", "db", contestNumber, "cache=hit");
       return cached;
     }
-    console.log(`[lottery] Cache miss for contest ${num}, fetching from API`);
+    logContestSource("db-first", "db", contestNumber, "cache=miss");
   }
 
-  // For latest contest: check DB cache first (with TTL)
+  // For latest contest: try API first to always get the newest contest
+  // This prevents serving stale data forever if the checker timer fails
   if (contestNumber === "") {
-    const cached = getLatestContest();
-    if (cached) {
-      // Check if cache is still fresh (updated_at is set by SQLite as UTC)
-      const cachedAt = new Date(cached.dataApuracao).getTime(); // fallback
-      // We use a simpler check: if we have ANY cached latest data, use it
-      // The loteca-checker timer refreshes it every draw night
-      // For truly stale data, the user can hard-refresh
-      console.log(`[lottery] Cache hit for latest contest ${cached.numero}`);
-      return cached;
+    try {
+      const data = await fetchContestFromApi(contestNumber);
+      logContestSource("api-first", "api", contestNumber, `numero=${data.numero}`);
+      try {
+        saveContest(data);
+      } catch (error) {
+        console.error(`[lottery] Failed to cache contest ${data.numero}:`, error);
+      }
+      return data;
+    } catch {
+      // All APIs failed — fall back to cached data if available
+      const cached = getLatestContest();
+      if (cached) {
+        logContestSource("api-first", "db", contestNumber, `fallback=api-unavailable numero=${cached.numero}`);
+        return cached;
+      }
+      // No cache either — re-throw the API error
+      throw new Error("Todas as APIs de loteria estão indisponíveis. Tente novamente mais tarde.");
     }
   }
 
-  // Fetch from API
+  // Fetch specific contest from API (cache miss above)
   const data = await fetchContestFromApi(contestNumber);
+  logContestSource("db-first", "api", contestNumber, `cache=miss numero=${data.numero}`);
 
   // Save to database (non-blocking error handling)
   try {
     saveContest(data);
   } catch (error) {
     console.error(`[lottery] Failed to cache contest ${data.numero}:`, error);
-    // Continue without caching - don't break the flow
   }
 
   return data;
