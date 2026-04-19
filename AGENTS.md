@@ -43,6 +43,7 @@ Traceability logs use:
 - Tests: `npm test`
 - Focused cache tests: `npm test -- src/lib/lottery.test.ts`
 - Checker manual run: `npm run checker`
+- Runtime guard: `npm run verify:runtime`
 
 ## Testing conventions
 
@@ -83,10 +84,12 @@ Impact:
 - navigation between contests becomes slow
 
 Fix:
-1. `npm rebuild better-sqlite3`
-2. `npm run build`
-3. `systemctl --user restart newloteca.service`
-4. Confirm log: `[db] SQLite database initialized ...`
+1. Ensure `newloteca.service` ExecStart uses `/home/ubuntu/.hermes/node/bin/node`
+2. `npm rebuild better-sqlite3`
+3. `npm run verify:runtime`
+4. `npm run build`
+5. `systemctl --user restart newloteca.service`
+6. Confirm log: `[db] SQLite database initialized ...`
 
 ## Commit guidance
 

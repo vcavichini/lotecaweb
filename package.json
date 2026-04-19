@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "checker": "tsx scripts/loteca-checker.ts"
+    "checker": "tsx scripts/loteca-checker.ts",
+    "verify:runtime": "bash scripts/verify-runtime.sh"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",

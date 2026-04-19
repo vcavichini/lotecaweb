@@ -17,6 +17,7 @@ SESSION_SECRET=um_segredo_longo
 npm install
 npm run dev
 npm test
+npm run verify:runtime
 npm run build
 ```
 
@@ -51,6 +52,22 @@ systemctl --user enable --now cloudflared-newloteca.service
 systemctl --user status cloudflared-newloteca.service --no-pager
 journalctl --user -u cloudflared-newloteca.service -n 100 --no-pager
 ```
+
+### Check automático de runtime (Node/better-sqlite3)
+
+Para evitar mismatch de ABI entre Node do serviço e addon nativo (`better-sqlite3`):
+
+```bash
+npm run verify:runtime
+```
+
+O script:
+- lê `ExecStart` do `newloteca.service`
+- compara path/versão/ABI do Node do serviço vs Node do ambiente atual
+- testa `require('better-sqlite3')` com o Node do serviço
+- retorna `exit 1` em mismatch crítico
+
+O próprio serviço também executa esse check via `ExecStartPre` antes de subir.
 
 ## Cache SQLite
 
