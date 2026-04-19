@@ -1,37 +1,24 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
-
-import type { BetsConfig } from "@/lib/types";
-import { validateBetsConfig } from "@/lib/validation";
+import type { BetsConfig } from "./types";
+import { createJsonBetsRepository } from "./bets-repository";
+import { resolveBetsFilePath } from "./bets-path";
 
 const defaultConfig: BetsConfig = {
   permanent: [],
   one_off: {},
 };
 
-function getBetsFilePath(): string {
-  return path.resolve(process.cwd(), "bets.json");
+export function getBetsFilePath(): string {
+  return resolveBetsFilePath();
 }
 
 export async function loadBets(): Promise<BetsConfig> {
-  const filePath = getBetsFilePath();
-
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as BetsConfig;
-    validateBetsConfig(parsed);
-    return parsed;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return defaultConfig;
-    }
-    throw error;
-  }
+  const repository = createJsonBetsRepository(getBetsFilePath(), defaultConfig);
+  return repository.load();
 }
 
 export async function saveBets(config: BetsConfig): Promise<void> {
-  validateBetsConfig(config);
-  await fs.writeFile(getBetsFilePath(), `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+  const repository = createJsonBetsRepository(getBetsFilePath(), defaultConfig);
+  await repository.save(config);
 }
 
 export function getBetsForContest(config: BetsConfig, contestNumber: number): string[][] {

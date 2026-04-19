@@ -69,8 +69,9 @@ O cache reduz latência para concursos já consultados e serve como fallback em 
 
 ## Observações
 
-- Esta app lê e grava `bets.json` na raiz do projeto
+- Web app e checker leem/escrevem o mesmo arquivo canônico `bets.json` na raiz do projeto
 - O banco SQLite em `data/loteca.db` armazena cache de concursos
+- Foundation de migração de apostas para DB: `docs/bets-db-migration-foundation.md`
 - O projeto Go original permanece como referência funcional
 - A CLI não foi portada para esta versão
 
@@ -92,7 +93,7 @@ npm run checker
 ### Funcionamento
 
 1. Busca o último resultado da Mega-Sena (APIs: guidi.dev.br → Caixa → proxy herokuapp)
-2. Compara com as apostas em `config/bets.json`
+2. Compara com as apostas em `bets.json` (raiz do projeto)
 3. Envia notificação via Discord usando `ops/config/send_notification`
 4. Deduplicação: grava último concurso notificado em `state/ultimo_concurso.txt`
 
@@ -107,7 +108,9 @@ journalctl --user -u loteca-checker.service -n 20 --no-pager
 
 ### Configuração de apostas
 
-Arquivo: `config/bets.json`
+Arquivo canônico: `bets.json` (raiz do projeto)
+
+> `config/bets.json` é legado/deprecated e não é fonte de runtime.
 
 ```json
 {

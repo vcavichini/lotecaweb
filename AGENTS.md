@@ -10,6 +10,8 @@ Key parts:
 - Admin routes: `src/app/admin/` + `src/app/api/admin/*`
 - Lottery API routes: `src/app/api/contest/*`
 - Checker script: `scripts/loteca-checker.ts`
+- Canonical bets file: `bets.json` (project root)
+- Legacy bets file (deprecated, no runtime source): `config/bets.json`
 - SQLite cache: `data/loteca.db`
 - Checker state: `state/ultimo_concurso.txt`
 

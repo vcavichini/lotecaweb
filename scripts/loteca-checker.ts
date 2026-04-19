@@ -14,6 +14,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import process from "process";
 
+import { getCheckerDefaultBetsFilePath, loadCheckerBets } from "../src/lib/checker-bets";
+
 // Re-export types from src/lib/types
 type PrizeTier = {
   descricaoFaixa: string;
@@ -31,15 +33,9 @@ type ContestData = {
   valorEstimadoProximoConcurso: number;
 };
 
-type BetsConfig = {
-  permanent: string[][];
-  one_off: Record<string, string[][]>;
-};
-
 // Paths
-const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
 const PROJECT_ROOT = "/home/ubuntu/projects/web/loteca";
-const BETS_FILE = process.env.LOTECA_BETS_FILE || `${PROJECT_ROOT}/config/bets.json`;
+const BETS_FILE = getCheckerDefaultBetsFilePath(PROJECT_ROOT, process.env);
 const STATE_DIR = `${PROJECT_ROOT}/state`;
 const STATE_FILE = process.env.LOTECA_STATE_FILE || `${STATE_DIR}/ultimo_concurso.txt`;
 const DB_PATH = process.env.LOTECA_DB_PATH || `${PROJECT_ROOT}/data/loteca.db`;
@@ -191,19 +187,7 @@ function saveContestToDb(data: ContestData): boolean {
 }
 
 function loadBets(contestNumber: number): string[][] {
-  if (!existsSync(BETS_FILE)) {
-    console.error(`Error: bets file not found: ${BETS_FILE}`);
-    process.exit(2);
-  }
-
-  const config: BetsConfig = JSON.parse(readFileSync(BETS_FILE, "utf-8"));
-  const bets = [...(config.permanent || [])];
-  
-  // Add one-off bets for this specific contest
-  const oneOffBets = config.one_off?.[String(contestNumber)] || [];
-  bets.push(...oneOffBets);
-
-  return bets;
+  return loadCheckerBets(contestNumber, BETS_FILE);
 }
 
 function getLastNotifiedContest(): number | null {
@@ -389,7 +373,14 @@ async function main(): Promise<number> {
   }
 
   // Load bets and calculate results
-  const bets = loadBets(numero);
+  let bets: string[][];
+  try {
+    bets = loadBets(numero);
+  } catch (error) {
+    console.error(`Error: ${(error as Error).message}`);
+    return 2;
+  }
+
   const results: Array<[string[], number]> = bets.map(bet => [bet, countMatches(listaDezenas, bet)]);
 
   // Build message

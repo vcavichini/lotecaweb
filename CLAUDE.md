@@ -41,7 +41,8 @@ Created automatically. `src/lib/db.ts` exports `getContest()`, `getLatestContest
 
 ### Checker state
 
-- `config/bets.json` — symlink to root `bets.json`; bets used by the checker
+- `bets.json` (project root) — canonical bets source shared by web + checker
+- `config/bets.json` — legacy/deprecated only (not runtime source)
 - `state/ultimo_concurso.txt` — last notified contest number (deduplication)
 
 ## Coding Style
