@@ -1,152 +1,93 @@
-# Repository Guidelines
+# AGENTS.md — loteca
 
-## Project Structure & Module Organization
+## Overview
 
-This repository is a small `Next.js 16` app with the App Router. Application code lives in `src/`:
+Next.js 16 app for Mega-Sena tracking and personal bets.
 
-- `src/app/`: routes, layouts, global styles, and API handlers such as `src/app/api/contest/latest/route.ts`
-- `src/app/admin/`: admin pages and UI
-- `src/components/`: shared UI components
-- `src/lib/`: domain logic, auth, validation, and file access helpers
+Key parts:
+- Web app: `src/app/`
+- Core logic: `src/lib/`
+- Admin routes: `src/app/admin/` + `src/app/api/admin/*`
+- Lottery API routes: `src/app/api/contest/*`
+- Checker script: `scripts/loteca-checker.ts`
+- SQLite cache: `data/loteca.db`
+- Checker state: `state/ultimo_concurso.txt`
 
-Tests are colocated with library code as `*.test.ts`, for example `src/lib/auth.test.ts`. Supporting notes live in `docs/`, and local handoff context is in `HANDOFF.md`.
+## Lottery API strategy
 
-## Build, Test, and Development Commands
+Fallback order (resilience):
+1. `https://api.guidi.dev.br/loteria/megasena/`
+2. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/`
+3. `https://loteriascaixa-api.herokuapp.com/api/megasena/`
 
-- `npm install`: install dependencies
-- `npm run dev`: start the local dev server at `http://localhost:3000`
-- `npm run build`: create a production build
-- `npm run start`: run the built app
-- `npm test`: run the Vitest suite once in Node mode
+Use `api-fallback-resilience` skill when changing this behavior.
 
-Before local development, define `ADMIN_PASSWORD` and `SESSION_SECRET` in `.env.local`. Use `.env.example` as the starting point.
+## Cache policy (source of truth for behavior)
 
-## Coding Style & Naming Conventions
+Implemented in `src/lib/lottery.ts`:
+- `fetchContestData("")` (latest): **API-first**, save to SQLite, fallback to DB only if APIs fail.
+- `fetchContestData("N")` (specific contest): **DB-first**, call API only on cache miss, then persist.
 
-The codebase uses TypeScript with `strict` mode enabled and the `@/*` import alias mapped to `src/*`. Follow the existing style:
+Traceability logs use:
+- `source=db|api`
+- `strategy=db-first|api-first`
 
-- 2-space indentation
-- double quotes
-- semicolons
-- `PascalCase` for React components
-- `camelCase` for functions and variables
-- descriptive route and module names, e.g. `src/lib/validation.ts`
+## Development commands
 
-No ESLint or Prettier config is currently committed, so keep changes consistent with surrounding files.
+- Install: `npm install`
+- Dev server: `npm run dev`
+- Build: `npm run build`
+- Start production: `npm run start`
+- Tests: `npm test`
+- Focused cache tests: `npm test -- src/lib/lottery.test.ts`
+- Checker manual run: `npm run checker`
 
-## Testing Guidelines
+## Testing conventions
 
-Vitest is configured in `vitest.config.ts` with a Node environment. Add tests beside the code they cover and use the `*.test.ts` naming pattern. Prioritize tests for `src/lib/` logic, especially validation, auth, and file-backed state changes. Run `npm test` before commits and `npm run build` before opening a pull request.
+- Vitest (`vitest.config.ts`, Node env)
+- Keep tests colocated as `*.test.ts` in `src/lib/`
+- Always run tests before shipping cache or API behavior changes
 
-## Security & Configuration Notes
+## Deploy (critical)
 
-Do not commit real secrets in `.env.local`/`.env.production`. The application reads and writes `bets.json` from the repository root, so review file-backed changes carefully before testing admin edits or data migrations.
+This app runs with systemd user service (`newloteca.service`).
 
-## SQLite Cache
+For production changes, use atomic deploy:
+1. `npm run build`
+2. `systemctl --user restart newloteca.service`
+3. Validate health and logs
 
-The app uses a local SQLite database (`data/loteca.db`) for caching contest data:
+Never do build without restart.
 
-- **Database path**: `data/loteca.db` (created automatically)
-- **Table**: `contests` with fields:
-  - `numero` (INTEGER PRIMARY KEY)
-  - `dataApuracao` (TEXT)
-  - `listaDezenas` (TEXT, JSON)
-  - `listaRateioPremio` (TEXT, JSON)
-  - `acumulado` (INTEGER/BOOLEAN)
-  - `dataProximoConcurso` (TEXT, nullable)
-  - `valorEstimadoProximoConcurso` (REAL)
-  - `updated_at` (TEXT, timestamp)
+## Runtime notes
 
-**Library**: `src/lib/db.ts` provides `getContest()`, `getLatestContest()`, `getContestCacheAge()`, and `saveContest()` functions.
-
-**Caching behavior**:
-- Latest contest: Check DB first (highest contest number). The loteca-checker timer refreshes data on draw nights, so DB stays current. API is only called if DB is empty.
-- Specific contest: Check DB first, fallback to API if not cached
-- `getLatestContestNumber()`: reads from DB (`SELECT MAX`), no API call unless DB empty
-
-**Error handling**: Database failures are logged but don't break the request flow.
-
-## Loading State
-
-`src/app/loading.tsx` provides a Suspense boundary fallback — shows "Carregando..." with placeholder balls while the server component renders. This gives immediate visual feedback on navigation.
-
-**Shared with checker**: The TypeScript checker (`scripts/loteca-checker.ts`) saves to this DB on every run — `saveContestToDb()` runs *before* the dedup check so the DB always reflects the latest API data, even on repeat notifications.
-
-## Loteca Checker (notificador)
-
-O projeto inclui um script TypeScript para conferência da Mega-Sena com notificação via Discord:
-
-- **Script**: `scripts/loteca-checker.ts`
-- **Config de apostas**: `config/bets.json`
-- **Estado**: `state/ultimo_concurso.txt` (deduplicação)
-- **Timer systemd**: `~/.config/systemd/user/loteca-checker.timer`
-
-### Comandos do checker
-
-```bash
-# Execução manual
-npm run checker
-
-# Verificar status do timer
-systemctl --user status loteca-checker.timer --no-pager
-
-# Logs do serviço
-journalctl --user -u loteca-checker.service -n 20 --no-pager
-```
-
-### Variáveis de ambiente (opcionais)
-
-- `LOTECA_BETS_FILE`: caminho alternativo para bets.json
-- `LOTECA_STATE_FILE`: caminho alternativo para arquivo de estado
-- `LOTECA_DB_PATH`: caminho alternativo para banco SQLite
-- `NOTIFY_CHANNEL`: canal de notificação (`discord`|`telegram`|`both`, padrão: `discord`)
-- `SEND_NOTIFICATION_CMD`: comando alternativo para notificação
-
-### Formato da notificação
-
-O script mantém paridade com a versão Python:
-
-- Cabeçalho: número do concurso, data, dezenas sorteadas
-- Jogos: cada aposta com destaques `[dezena]` para acertos
-- Resumo animado: emojis para quadra/quina/sena
-- Premiação: faixas, ganhadores e valores
-- Próximo concurso: data, estimativa, status
-
-### Timer systemd
-
-O timer executa automaticamente em dias de sorteio (Terça/Quinta/Sábado) às 22:00 e 23:00 (America/Sao_Paulo). O serviço usa caminhos absolutos para `tsx` e `node` devido ao ambiente do systemd user scope.
-
-## Deploy (CRITICAL)
-
-Next.js production loads the build into memory at startup. After `npm run build`, **always restart the service** — the process does NOT hot-reload:
-
-```bash
-npm run build && systemctl --user restart newloteca.service
-```
-
-Skipping the restart means the server keeps serving the old build from memory while disk has the new one. This causes client-side navigation breakage masked by CDN cache.
-
-## Runtime/Deploy Notes (homelab)
-
-- App service (user scope): `~/.config/systemd/user/newloteca.service`
+- Service: `newloteca.service`
 - Local bind: `127.0.0.1:8126`
-- Public exposure is via Cloudflare Tunnel service `cloudflared-newloteca.service` (not via direct public bind)
-- Public URL: `https://newloteca.botlab.dev.br/`
-- Cloudflare token file: `~/.config/cloudflared/newloteca.token`
-- Preferred ops commands:
-  - `systemctl --user status newloteca.service --no-pager`
-  - `journalctl --user -u newloteca.service -n 100 --no-pager`
-  - `systemctl --user status cloudflared-newloteca.service --no-pager`
+- Public URL: `https://newloteca.botlab.dev.br/` (via Cloudflare Tunnel)
 
-## Commit & Pull Request Guidelines
+Useful checks:
+- `systemctl --user status newloteca.service --no-pager`
+- `journalctl --user -u newloteca.service -n 100 --no-pager`
 
-Git history is not available in this checkout, so no repository-specific commit convention could be verified. Use short, imperative commit messages such as `fix admin session check` or `add contest validation tests`.
+## Known pitfall: better-sqlite3 ABI mismatch
 
-For pull requests, include:
+Symptom in logs:
+- `ERR_DLOPEN_FAILED`
+- `Module did not self-register`
 
-- a concise summary of behavior changes
-- linked issue or task reference when applicable
-- test evidence (`npm test`, manual route checks)
-- screenshots for UI changes in `src/app` or `src/components`
+Impact:
+- SQLite cache fails to load
+- app falls back to API repeatedly
+- navigation between contests becomes slow
 
-For the first local commit, keep generated directories such as `node_modules/` and `.next/` out of version control; `.gitignore` already covers them.
+Fix:
+1. `npm rebuild better-sqlite3`
+2. `npm run build`
+3. `systemctl --user restart newloteca.service`
+4. Confirm log: `[db] SQLite database initialized ...`
+
+## Commit guidance
+
+Keep commits scoped.
+- Behavior/code changes separate from docs-only changes.
+- Do not commit generated files (`.next/`, `node_modules/`).
