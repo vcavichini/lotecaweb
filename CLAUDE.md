@@ -9,10 +9,12 @@ npm run dev        # Dev server at http://localhost:3000
 npm run build      # Production build
 npm start          # Serve production build
 npm test           # Run Vitest suite (Node environment)
+npm test -- src/lib/bets.test.ts  # Run a single test file
 npm run checker    # Run the loteca-checker script manually
+npm run verify:runtime  # Verify Node.js runtime matches .nvmrc / service expectation
 ```
 
-Before local development, copy `.env.example` to `.env.local` and set `ADMIN_PASSWORD` and `SESSION_SECRET`.
+Node.js version is pinned in `.nvmrc`. Run `nvm use` before `npm install` or `npm test` — `better-sqlite3` is a native module and must be compiled for the active Node version. Mismatches cause test failures.
 
 Run `npm test` before commits and `npm run build` before opening a pull request.
 
@@ -21,28 +23,42 @@ Run `npm test` before commits and `npm run build` before opening a pull request.
 Next.js 16 App Router app for checking Brazilian Mega-Sena lottery results. All source code is in `src/`:
 
 - `src/app/` — routes, layouts, and API handlers (Next.js App Router conventions)
-- `src/app/admin/` — admin pages and UI components
-- `src/lib/` — domain logic: `lottery.ts` (API fetch with 3-endpoint fallback), `db.ts` (SQLite cache), `bets.ts` (file-backed config), `auth.ts` (HMAC-SHA256 session tokens), `validation.ts`, `utils.ts`
+- `src/lib/` — domain logic: `lottery.ts` (API fetch with 3-endpoint fallback), `db.ts` (SQLite — contests + bets), `bets.ts` (bets facade with auto-migration), `validation.ts`, `utils.ts`
 - `src/components/` — shared UI components
 - `scripts/loteca-checker.ts` — standalone notification script; shares `src/lib/` with the web app
 
-Tests are colocated with library code as `*.test.ts` (e.g., `src/lib/auth.test.ts`). Vitest runs in Node mode.
+Tests are colocated with library code as `*.test.ts` (e.g., `src/lib/bets.test.ts`). Vitest runs in Node mode.
 
 ### Data flow
 
 1. Homepage (`src/app/page.tsx`, server component) calls `fetchContestData()` → checks SQLite → falls back to external APIs → renders results with bets overlay
-2. Admin pages authenticate via HMAC-signed session cookie; bets are read/written to `bets.json` at the project root
+2. Bets are read/written to the `bets` table in `data/loteca.db` via `loadBets()`/`saveBets()` in `bets.ts`
 3. API routes under `src/app/api/` are thin wrappers around `src/lib/` functions
 4. `scripts/loteca-checker.ts` runs on a systemd timer (Tue/Thu/Sat 22:00 and 23:00 São Paulo time), saves to SQLite, and sends Discord notifications for new contests
 
-### SQLite cache (`data/loteca.db`)
+### SQLite (`data/loteca.db`)
 
-Created automatically. `src/lib/db.ts` exports `getContest()`, `getLatestContest()`, `saveContest()`, `getContestCacheAge()`. DB errors are logged but never break the request. The checker script saves to DB *before* dedup check so the DB always reflects latest API data.
+Single database file for all persistent state. Created automatically. `src/lib/db.ts` manages one shared connection and exports:
+- `getContest()`, `getLatestContest()`, `saveContest()`, `getContestCacheAge()` — contest cache
+- `getBets()`, `saveBets()` — bets storage (one row per bet: `numbers TEXT`, `type TEXT`, `contest INTEGER`)
+
+DB errors are logged but never break requests. The checker saves to DB *before* the dedup check so the DB always reflects the latest API data.
+
+Set `LOTECA_DB_PATH` env var to override the database path (used by tests to point at a temp file). Call `closeDb()` between tests to reset the singleton so the new path is picked up.
+
+### Bets architecture
+
+`bets.ts` is the public facade for bets — call `loadBets()` / `saveBets()` / `getBetsForContest()`. Internally it uses `getBets()`/`saveBets()` from `db.ts`.
+
+**Auto-migration**: on the first `loadBets()` call after deploy, if the `bets` table is empty and a `bets.json` file exists at `<cwd>/bets.json`, the file is read and written to SQLite automatically. No manual migration step needed.
+
+`bets-repository.ts` defines a `BetsRepository` interface with a JSON-file backend — used by contract tests and auto-migration, not by runtime code.
+
+`bets-path.ts` resolves the bets file path for migration only: respects `LOTECA_BETS_FILE` env var, otherwise `<cwd>/bets.json`.
 
 ### Checker state
 
-- `bets.json` (project root) — canonical bets source shared by web + checker
-- `config/bets.json` — legacy/deprecated only (not runtime source)
+- `data/loteca.db` — single source of truth for both contest cache and bets
 - `state/ultimo_concurso.txt` — last notified contest number (deduplication)
 
 ## Coding Style

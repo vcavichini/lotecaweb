@@ -79,10 +79,11 @@ function logContestSource(strategy: "api-first" | "db-first", source: "api" | "d
 }
 
 /**
- * Fetch contest data from APIs (without caching)
- * Used internally by fetchContestData
+ * Fetch contest data directly from external APIs (no DB caching, no fallback to DB).
+ * Tries three endpoints in order; throws if all fail.
+ * Used internally by fetchContestData and by the checker script.
  */
-async function fetchContestFromApi(contestNumber = ""): Promise<ContestData> {
+export async function fetchContestFromApi(contestNumber = ""): Promise<ContestData> {
   const primaryUrl = contestNumber === "" ? `${PRIMARY_API}ultimo` : `${PRIMARY_API}${contestNumber}`;
   const fallbackUrl = contestNumber === "" ? FALLBACK_API : `${FALLBACK_API}${contestNumber}`;
   const proxyUrl = contestNumber === "" ? `${PROXY_API}latest` : `${PROXY_API}${contestNumber}`;

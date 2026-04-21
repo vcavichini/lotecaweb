@@ -1,194 +1,30 @@
 #!/usr/bin/env tsx
 /**
  * loteca-checker.ts — Conferidor de Mega-Sena com notificação centralizada
- * 
- * Migrated from Python to TypeScript. Reuses lottery.ts and db.ts from the Next.js app.
- * Notifies via Discord using ops/config/send_notification.
- * 
+ *
+ * Runs on a systemd timer (Tue/Thu/Sat 22:00 and 23:00 São Paulo time).
+ * Fetches the latest Mega-Sena result, compares against bets, and sends
+ * Discord/Telegram notifications for new contests.
+ *
  * Usage: tsx scripts/loteca-checker.ts
  * systemd: WorkingDirectory=/home/ubuntu/projects/web/loteca
  */
 
 import { execSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { dirname } from "path";
 import process from "process";
 
-import { getCheckerDefaultBetsFilePath, loadCheckerBets } from "../src/lib/checker-bets";
-
-// Re-export types from src/lib/types
-type PrizeTier = {
-  descricaoFaixa: string;
-  numeroDeGanhadores: number;
-  valorPremio: number;
-};
-
-type ContestData = {
-  numero: number;
-  dataApuracao: string;
-  listaDezenas: string[];
-  listaRateioPremio: PrizeTier[];
-  acumulado: boolean;
-  dataProximoConcurso: string | null;
-  valorEstimadoProximoConcurso: number;
-};
+import { loadBets, getBetsForContest } from "../src/lib/bets";
+import { saveContest, closeDb } from "../src/lib/db";
+import { fetchContestFromApi } from "../src/lib/lottery";
+import type { ContestData } from "../src/lib/types";
 
 // Paths
 const PROJECT_ROOT = "/home/ubuntu/projects/web/loteca";
-const BETS_FILE = getCheckerDefaultBetsFilePath(PROJECT_ROOT, process.env);
 const STATE_DIR = `${PROJECT_ROOT}/state`;
 const STATE_FILE = process.env.LOTECA_STATE_FILE || `${STATE_DIR}/ultimo_concurso.txt`;
-const DB_PATH = process.env.LOTECA_DB_PATH || `${PROJECT_ROOT}/data/loteca.db`;
 const SEND_NOTIFICATION_CMD = process.env.SEND_NOTIFICATION_CMD || "/home/ubuntu/projects/ops/config/send_notification";
 const NOTIFY_CHANNEL = (process.env.NOTIFY_CHANNEL || "discord").toLowerCase();
-
-// Import db module dynamically to reuse existing code
-// We'll use inline SQLite operations for simplicity
-
-function normalizeProxyApiData(data: Record<string, unknown>): ContestData {
-  return {
-    numero: (data.concurso as number) || 0,
-    dataApuracao: (data.data as string) || "",
-    listaDezenas: ((data.dezenas as string[]) || []),
-    listaRateioPremio: ((data.premiacoes as Array<{ descricao: string; ganhadores: number; valorPremio: number }>) || []).map(p => ({
-      descricaoFaixa: p.descricao,
-      numeroDeGanhadores: p.ganhadores,
-      valorPremio: p.valorPremio,
-    })),
-    acumulado: (data.acumulou as boolean) || false,
-    dataProximoConcurso: (data.dataProximoConcurso as string) || null,
-    valorEstimadoProximoConcurso: (data.valorEstimadoProximoConcurso as number) || 0,
-  };
-}
-
-function normalizeContestData(data: Record<string, unknown>): ContestData {
-  return {
-    numero: (data.numero as number) || 0,
-    dataApuracao: (data.dataApuracao as string) || "",
-    listaDezenas: ((data.listaDezenas as string[]) || []),
-    listaRateioPremio: ((data.listaRateioPremio as PrizeTier[]) || []),
-    acumulado: (data.acumulado as boolean) || false,
-    dataProximoConcurso: (data.dataProximoConcurso as string) || null,
-    valorEstimadoProximoConcurso: (data.valorEstimadoProximoConcurso as number) || 0,
-  };
-}
-
-async function fetchJson<T>(url: string, timeoutMs = 10000): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function fetchLatestResult(): Promise<ContestData | null> {
-  const PRIMARY_API = "https://api.guidi.dev.br/loteria/megasena/ultimo";
-  const FALLBACK_API = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/";
-  const PROXY_API = "https://loteriascaixa-api.herokuapp.com/api/megasena/latest";
-
-  // Try primary API
-  try {
-    const data = normalizeContestData(await fetchJson<Record<string, unknown>>(PRIMARY_API));
-    if (data.numero !==0) return data;
-  } catch {
-    // Continue to fallback
-  }
-
-  // Try Caixa fallback
-  try {
-    const data = normalizeContestData(await fetchJson<Record<string, unknown>>(FALLBACK_API));
-    if (data.numero !== 0) return data;
-  } catch {
-    // Continue to proxy
-  }
-
-  // Try proxy API
-  try {
-    const data = normalizeProxyApiData(await fetchJson<Record<string, unknown>>(PROXY_API));
-    if (data.numero !== 0) return data;
-  } catch {
-    // All failed
-  }
-
-  return null;
-}
-
-function saveContestToDb(data: ContestData): boolean {
-  try {
-    // Ensure state directory exists for DB
-    const dbDir = dirname(DB_PATH);
-    if (!existsSync(dbDir)) {
-      mkdirSync(dbDir, { recursive: true });
-    }
-
-    // Use better-sqlite3 via dynamic require (it's a dev dependency)
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Database = require("better-sqlite3");
-    const db = new Database(DB_PATH);
-
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS contests (
-        numero INTEGER PRIMARY KEY,
-        dataApuracao TEXT NOT NULL,
-        listaDezenas TEXT NOT NULL,
-        listaRateioPremio TEXT NOT NULL,
-        acumulado INTEGER NOT NULL,
-        dataProximoConcurso TEXT,
-        valorEstimadoProximoConcurso REAL NOT NULL,
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-
-    const stmt = db.prepare(`
-      INSERT INTO contests (
-        numero, dataApuracao, listaDezenas, listaRateioPremio,
-        acumulado, dataProximoConcurso, valorEstimadoProximoConcurso, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(numero) DO UPDATE SET
-        dataApuracao = excluded.dataApuracao,
-        listaDezenas = excluded.listaDezenas,
-        listaRateioPremio = excluded.listaRateioPremio,
-        acumulado = excluded.acumulado,
-        dataProximoConcurso = excluded.dataProximoConcurso,
-        valorEstimadoProximoConcurso = excluded.valorEstimadoProximoConcurso,
-        updated_at = datetime('now')
-    `);
-
-    stmt.run(
-      data.numero,
-      data.dataApuracao,
-      JSON.stringify(data.listaDezenas),
-      JSON.stringify(data.listaRateioPremio),
-      data.acumulado ? 1 : 0,
-      data.dataProximoConcurso,
-      data.valorEstimadoProximoConcurso
-    );
-
-    db.close();
-    console.log(`[db] Saved contest ${data.numero} to cache`);
-    return true;
-  } catch (error) {
-    console.error(`[db] Error saving contest ${data.numero}:`, error);
-    return false;
-  }
-}
-
-function loadBets(contestNumber: number): string[][] {
-  return loadCheckerBets(contestNumber, BETS_FILE);
-}
 
 function getLastNotifiedContest(): number | null {
   if (existsSync(STATE_FILE)) {
@@ -250,7 +86,8 @@ function formatCurrency(value: number): string {
 function renamePrizeTier(tier: string): string {
   const map: Record<string, string> = {
     "6 acertos": "Sena",
-    "5 acertos": "Quina","4 acerts": "Quadra",
+    "5 acertos": "Quina",
+    "4 acerts": "Quadra",
   };
   return map[tier] || tier;
 }
@@ -350,21 +187,18 @@ function runSender(command: string, message: string): [boolean, string] {
 }
 
 async function main(): Promise<number> {
-  if (!existsSync(BETS_FILE)) {
-    console.error(`Error: bets file not found: ${BETS_FILE}`);
-    return 2;
-  }
-
-  const contestData = await fetchLatestResult();
-  if (!contestData) {
-    console.error("Error: could not fetch Mega-Sena result.");
+  let contestData: ContestData;
+  try {
+    contestData = await fetchContestFromApi();
+  } catch (error) {
+    console.error("Error: could not fetch Mega-Sena result.", (error as Error).message);
     return 1;
   }
 
   const { numero, listaDezenas, dataApuracao } = contestData;
 
   // Save to database before dedup check — DB must always reflect latest API data
-  saveContestToDb(contestData);
+  saveContest(contestData);
 
   // Check if already notified
   if (getLastNotifiedContest() === numero) {
@@ -372,12 +206,12 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Load bets and calculate results
-  let bets: string[][];
-  try {
-    bets = loadBets(numero);
-  } catch (error) {
-    console.error(`Error: ${(error as Error).message}`);
+  // Load bets from DB (auto-migrates from bets.json on first run if present)
+  const betsConfig = await loadBets();
+  const bets = getBetsForContest(betsConfig, numero);
+
+  if (bets.length === 0) {
+    console.error("Error: no bets configured. Add bets to the database before the draw.");
     return 2;
   }
 
@@ -415,6 +249,13 @@ async function main(): Promise<number> {
   return 0;
 }
 
-main().then(exitCode => {
-  process.exit(exitCode);
-});
+main()
+  .then(exitCode => {
+    closeDb();
+    process.exit(exitCode);
+  })
+  .catch(error => {
+    console.error("Unexpected error:", error);
+    closeDb();
+    process.exit(1);
+  });
