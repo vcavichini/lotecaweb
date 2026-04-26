@@ -87,7 +87,7 @@ function renamePrizeTier(tier: string): string {
   const map: Record<string, string> = {
     "6 acertos": "Sena",
     "5 acertos": "Quina",
-    "4 acerts": "Quadra",
+    "4 acertos": "Quadra",
   };
   return map[tier] || tier;
 }

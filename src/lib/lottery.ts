@@ -7,6 +7,29 @@ const FALLBACK_API = "https://servicebus2.caixa.gov.br/portaldeloterias/api/mega
 // Third-party proxy that works from servers/cloud (bypasses Caixa 403 block)
 const PROXY_API = "https://loteriascaixa-api.herokuapp.com/api/megasena/";
 const API_TIMEOUT_MS = 10000;
+const MAX_RETRIES = 2;
+const BASE_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry<T>(url: string): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetchJson<T>(url);
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+        console.warn(`[lottery] fetch attempt ${attempt + 1}/${MAX_RETRIES + 1} failed for ${url}, retrying in ${delay}ms`);
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
@@ -90,7 +113,7 @@ export async function fetchContestFromApi(contestNumber = ""): Promise<ContestDa
 
   // Try primary API first
   try {
-    const primaryData = normalizeContestData(await fetchJson<ContestData>(primaryUrl));
+    const primaryData = normalizeContestData(await fetchJsonWithRetry<ContestData>(primaryUrl));
     if (primaryData.numero !== 0) {
       return primaryData;
     }
@@ -100,7 +123,7 @@ export async function fetchContestFromApi(contestNumber = ""): Promise<ContestDa
 
   // Try Caixa fallback API
   try {
-    const fallbackData = normalizeContestData(await fetchJson<ContestData>(fallbackUrl));
+    const fallbackData = normalizeContestData(await fetchJsonWithRetry<ContestData>(fallbackUrl));
     if (fallbackData.numero !== 0) {
       return fallbackData;
     }
@@ -110,7 +133,7 @@ export async function fetchContestFromApi(contestNumber = ""): Promise<ContestDa
 
   // Try proxy API (third-party that bypasses Caixa 403 block)
   try {
-    const proxyData = normalizeProxyApiData(await fetchJson<ProxyApiData>(proxyUrl));
+    const proxyData = normalizeProxyApiData(await fetchJsonWithRetry<ProxyApiData>(proxyUrl));
     if (proxyData.numero !== 0) {
       return proxyData;
     }
