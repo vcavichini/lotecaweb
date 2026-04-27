@@ -14,10 +14,16 @@ Key parts:
 
 ## Lottery API strategy
 
-Fallback order (resilience):
-1. `https://api.guidi.dev.br/loteria/megasena/`
-2. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/`
-3. `https://loteriascaixa-api.herokuapp.com/api/megasena/`
+Default fallback order (resilience, when there is no history):
+1. `https://loteriascaixa-api.herokuapp.com/api/megasena/` (`proxy`)
+2. `https://lotorama.com.br/mega-sena/` or `https://lotorama.com.br/resultado-megasena/{contest}/` (`lotorama`)
+3. `https://api.guidi.dev.br/loteria/megasena/` (`guidi`)
+4. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/` (`caixa`, always dead last)
+
+Smart priority:
+- The last successful source is persisted in SQLite `app_state` as `lottery.last_successful_source`
+- On the next execution, that source is tried first and the remaining sources keep the default relative order
+- Web app and checker share the exact same source ordering via `src/lib/lottery.ts`
 
 ## Cache policy (source of truth for behavior)
 
@@ -44,6 +50,16 @@ dataProximoConcurso TEXT
 valorEstimadoProximoConcurso REAL
 updated_at TEXT
 ```
+
+**app_state** — small key/value metadata cache
+```
+key TEXT PRIMARY KEY
+value TEXT
+updated_at TEXT
+```
+
+Used by source priority persistence:
+- `lottery.last_successful_source` → `proxy|lotorama|guidi|caixa`
 
 **bets** — one row per bet (normalized, human-readable)
 ```

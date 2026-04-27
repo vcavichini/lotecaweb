@@ -34,7 +34,8 @@ npm run checker      # executa o conferidor manualmente
 Banco único para todo estado persistente — criado automaticamente na primeira execução.
 
 **Tabela `contests`** — cache de resultados da Mega-Sena  
-**Tabela `bets`** — apostas (uma linha por aposta)
+**Tabela `bets`** — apostas (uma linha por aposta)  
+**Tabela `app_state`** — metadados simples do app, incluindo a última fonte bem-sucedida da Mega-Sena
 
 ```
 id         INTEGER PRIMARY KEY AUTOINCREMENT
@@ -51,10 +52,11 @@ Apostas são gerenciadas diretamente no banco (sem interface admin). O campo `nu
 - **Concurso mais recente**: sempre busca na API externa, salva no banco, usa banco como fallback
 - **Concurso específico por número**: busca no banco primeiro; consulta API somente em cache miss
 
-APIs externas (ordem de fallback):
-1. `api.guidi.dev.br`
-2. `servicebus2.caixa.gov.br`
-3. `loteriascaixa-api.herokuapp.com`
+Fontes externas compartilhadas pelo web app e pelo checker:
+- Ordem base sem histórico: `proxy -> lotorama -> guidi -> caixa`
+- `lotorama` usa `https://lotorama.com.br/mega-sena/` para o último concurso e `https://lotorama.com.br/resultado-megasena/{concurso}/` para concursos específicos
+- A última fonte bem-sucedida é persistida em `app_state.key='lottery.last_successful_source'` e sobe para o primeiro lugar na próxima execução
+- A API bruta da Caixa (`servicebus2`) continua disponível apenas como último fallback
 
 ## Deploy (homelab)
 
@@ -105,7 +107,7 @@ npm run checker
 
 ### Funcionamento
 
-1. Busca o último resultado via APIs externas (falha se todas estiverem fora do ar)
+1. Busca o último resultado via pipeline compartilhado de fontes externas (ordem dinâmica baseada na última fonte bem-sucedida; falha se todas estiverem fora do ar)
 2. Salva no banco SQLite antes do check de deduplicação
 3. Carrega apostas do banco (`data/loteca.db`, tabela `bets`)
 4. Compara apostas com o sorteio e formata mensagem

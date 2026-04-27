@@ -45,6 +45,14 @@ function getDb(): Database.Database | null {
       )
     `);
 
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS app_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
     // Migrate bets to normalized schema if the old single-row JSON blob schema exists
     const betsExists = (db.prepare(
       "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='bets'"
@@ -226,6 +234,40 @@ export function getContestCacheAge(contestNumber: number): string | null {
     return row?.updated_at ?? null;
   } catch {
     return null;
+  }
+}
+
+export function getAppState(key: string): string | null {
+  const database = getDb();
+  if (!database) return null;
+
+  try {
+    const row = database.prepare(
+      "SELECT value FROM app_state WHERE key = ?",
+    ).get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  } catch (error) {
+    console.error(`[db] Error getting app_state ${key}:`, error);
+    return null;
+  }
+}
+
+export function setAppState(key: string, value: string): boolean {
+  const database = getDb();
+  if (!database) return false;
+
+  try {
+    database.prepare(`
+      INSERT INTO app_state (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = datetime('now')
+    `).run(key, value);
+    return true;
+  } catch (error) {
+    console.error(`[db] Error setting app_state ${key}:`, error);
+    return false;
   }
 }
 
