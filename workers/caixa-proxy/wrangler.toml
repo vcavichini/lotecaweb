@@ -1,0 +1,8 @@
+name = "caixa-lottery-proxy"
+main = "index.ts"
+compatibility_date = "2024-12-01"
+account_id = "d653630a7557d8350c7ac75ebd71dabc"
+workers_dev = true
+
+[placement]
+mode = "smart"

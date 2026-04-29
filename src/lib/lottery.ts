@@ -7,12 +7,13 @@ const PROXY_API = "https://loteriascaixa-api.herokuapp.com/api/megasena/";
 const LOTORAMA_LATEST_URL = "https://lotorama.com.br/mega-sena/";
 const LOTORAMA_CONTEST_URL = "https://lotorama.com.br/resultado-megasena/";
 const CAIXA_API = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/";
+const CAIXA_WORKER_URL = process.env.CAIXA_WORKER_URL ?? "";
 const API_TIMEOUT_MS = 10000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 2000;
 export const LAST_SUCCESSFUL_SOURCE_KEY = "lottery.last_successful_source";
 
-export type LotterySourceId = "proxy" | "lotorama" | "guidi" | "caixa";
+export type LotterySourceId = "proxy" | "lotorama" | "guidi" | "caixa" | "caixa-worker";
 
 type RetryMode = "json" | "text";
 
@@ -187,28 +188,38 @@ function stripTags(value: string): string {
     .trim();
 }
 
+function stripMarkdownFormatting(value: string): string {
+  return value
+    .replace(/^\s{0,3}#{1,6}\s?/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
+}
+
 function normalizeVisibleText(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<\/div>/gi, "\n")
-      .replace(/<\/section>/gi, "\n")
-      .replace(/<\/article>/gi, "\n")
-      .replace(/<\/h[1-6]>/gi, "\n")
-      .replace(/<\/li>/gi, "\n")
-      .replace(/<\/tr>/gi, "\n")
-      .replace(/<\/td>/gi, " ")
-      .replace(/<\/th>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\r/g, "")
-      .replace(/\t/g, " ")
-      .replace(/ +/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{2,}/g, "\n")
-      .trim(),
+  return stripMarkdownFormatting(
+    decodeHtmlEntities(
+      html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<\/div>/gi, "\n")
+        .replace(/<\/section>/gi, "\n")
+        .replace(/<\/article>/gi, "\n")
+        .replace(/<\/h[1-6]>/gi, "\n")
+        .replace(/<\/li>/gi, "\n")
+        .replace(/<\/tr>/gi, "\n")
+        .replace(/<\/td>/gi, " ")
+        .replace(/<\/th>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\r/g, "")
+        .replace(/\t/g, " ")
+        .replace(/ +/g, " ")
+        .replace(/\n\s+/g, "\n")
+        .replace(/\n{2,}/g, "\n")
+        .trim(),
+    ),
   );
 }
 
@@ -308,13 +319,13 @@ function extractLotoramaDezenasFromHtml(html: string, text: string): string[] {
 function parseLotoramaHtml(html: string, contestNumber: string): ContestData {
   const text = normalizeVisibleText(html);
   const numero = Number(extractRegexValue(text, [
-    /Resultado da MEGA-SENA concurso\s*(\d{1,4})/i,
-    /Último Resultado:\s*Concurso\s*N[ºo]?\s*(\d{1,4})/i,
-    /Concurso\s*(?:N[ºo]\s*)?(\d{1,4})/i,
+    /Resultado da MEGA-SENA concurso\s*(\d{1,5})/i,
+    /Último Resultado:\s*Concurso\s*N[ºo]?\s*(\d{1,5})/i,
+    /Concurso\s*(?:N[ºo]\s*)?(\d{1,5})/i,
   ]) ?? 0);
   const dataApuracao = extractRegexValue(text, [
-    /Resultado da MEGA-SENA concurso\s*\d{1,4}\s*dia\s*(\d{2}\/\d{2}\/\d{4})/i,
-    /Último Resultado:\s*Concurso\s*N[ºo]?\s*\d{1,4}\s*\((\d{2}\/\d{2}\/\d{4})\)/i,
+    /Resultado da MEGA-SENA concurso\s*\d{1,5}\s*dia\s*(\d{2}\/\d{2}\/\d{4})/i,
+    /Último Resultado:\s*Concurso\s*N[ºo]?\s*\d{1,5}\s*\((\d{2}\/\d{2}\/\d{4})\)/i,
     /Sorteio realizado no dia\s*(\d{2}\/\d{2}\/\d{4})/i,
   ]) ?? "";
 
@@ -342,6 +353,12 @@ function parseLotoramaHtml(html: string, contestNumber: string): ContestData {
   });
 
   return validateContestDataOrThrow(normalized);
+}
+
+function validateContestNumberMatch(data: ContestData, contestNumber: string): void {
+  if (contestNumber !== "" && data.numero !== Number(contestNumber)) {
+    throw new Error(`contest mismatch expected=${contestNumber} got=${data.numero}`);
+  }
 }
 
 function validateContestDataOrThrow(data: ContestData): ContestData {
@@ -389,23 +406,55 @@ function buildCaixaUrl(contestNumber: string): string {
 }
 
 async function fetchFromGuidi(contestNumber: string): Promise<ContestData> {
-  return validateContestDataOrThrow(normalizeContestData(await fetchWithRetry<ContestData>(buildGuidiUrl(contestNumber), "json")));
+  const data = validateContestDataOrThrow(normalizeContestData(await fetchWithRetry<ContestData>(buildGuidiUrl(contestNumber), "json")));
+  validateContestNumberMatch(data, contestNumber);
+  return data;
 }
 
 async function fetchFromProxy(contestNumber: string): Promise<ContestData> {
-  return validateContestDataOrThrow(normalizeProxyApiData(await fetchWithRetry<ProxyApiData>(buildProxyUrl(contestNumber), "json")));
+  const data = validateContestDataOrThrow(normalizeProxyApiData(await fetchWithRetry<ProxyApiData>(buildProxyUrl(contestNumber), "json")));
+  validateContestNumberMatch(data, contestNumber);
+  return data;
+}
+
+function isCloudflareChallenge(html: string): boolean {
+  return html.includes("cf_chl_opt") || html.includes("challenges.cloudflare.com") || /^<!DOCTYPE html>.*<title>Just a moment\.\.\.<\/title>/is.test(html);
 }
 
 async function fetchFromLotorama(contestNumber: string): Promise<ContestData> {
   const html = await fetchWithRetry<string>(buildLotoramaUrl(contestNumber), "text");
+  if (isCloudflareChallenge(html)) {
+    throw new Error("Cloudflare challenge detected");
+  }
   return parseLotoramaHtml(html, contestNumber);
 }
 
 async function fetchFromCaixa(contestNumber: string): Promise<ContestData> {
-  return validateContestDataOrThrow(normalizeContestData(await fetchWithRetry<ContestData>(buildCaixaUrl(contestNumber), "json")));
+  const data = validateContestDataOrThrow(normalizeContestData(await fetchWithRetry<ContestData>(buildCaixaUrl(contestNumber), "json")));
+  validateContestNumberMatch(data, contestNumber);
+  return data;
+}
+
+function buildCaixaWorkerUrl(contestNumber: string): string {
+  const base = CAIXA_WORKER_URL.replace(/\/+$/, "");
+  return contestNumber === "" ? `${base}/megasena` : `${base}/megasena/${contestNumber}`;
+}
+
+async function fetchFromCaixaWorker(contestNumber: string): Promise<ContestData> {
+  if (!CAIXA_WORKER_URL) {
+    throw new Error("CAIXA_WORKER_URL not configured");
+  }
+  const data = validateContestDataOrThrow(normalizeContestData(await fetchWithRetry<ContestData>(buildCaixaWorkerUrl(contestNumber), "json")));
+  validateContestNumberMatch(data, contestNumber);
+  return data;
 }
 
 const SOURCE_REGISTRY: SourceDefinition[] = [
+  {
+    id: "caixa-worker",
+    buildUrl: buildCaixaWorkerUrl,
+    fetchContest: fetchFromCaixaWorker,
+  },
   {
     id: "proxy",
     buildUrl: buildProxyUrl,
@@ -433,7 +482,7 @@ function normalizeStoredSourceId(rawPreferred: string | null): LotterySourceId |
     return "lotorama";
   }
 
-  if (rawPreferred === "proxy" || rawPreferred === "lotorama" || rawPreferred === "guidi" || rawPreferred === "caixa") {
+  if (rawPreferred === "proxy" || rawPreferred === "lotorama" || rawPreferred === "guidi" || rawPreferred === "caixa" || rawPreferred === "caixa-worker") {
     return rawPreferred;
   }
 
@@ -441,7 +490,9 @@ function normalizeStoredSourceId(rawPreferred: string | null): LotterySourceId |
 }
 
 export function getOrderedSources(): LotterySourceId[] {
-  const defaultOrder = SOURCE_REGISTRY.map((source) => source.id);
+  const defaultOrder = SOURCE_REGISTRY
+    .filter((source) => source.id !== "caixa-worker" || (process.env.CAIXA_WORKER_URL ?? "") !== "")
+    .map((source) => source.id);
   const preferred = normalizeStoredSourceId(getAppState(LAST_SUCCESSFUL_SOURCE_KEY));
 
   if (!preferred) {
@@ -463,10 +514,59 @@ function logContestSource(strategy: "api-first" | "db-first", source: "api" | "d
   console.log(`[lottery] source=${source} strategy=${strategy} contest=${label} ${context}`);
 }
 
+type SuccessfulContestResult = {
+  sourceId: LotterySourceId;
+  data: ContestData;
+};
+
+async function fetchLatestContestFromApi(): Promise<ContestData> {
+  const contestLabel = "latest";
+  let lastError: Error | null = null;
+  let winningResult: SuccessfulContestResult | null = null;
+
+  for (const source of getOrderedSourceDefinitions()) {
+    console.log(`[lottery] try source=${source.id} contest=${contestLabel} url=${source.buildUrl("")}`);
+
+    try {
+      const data = await source.fetchContest("");
+      console.log(`[lottery] success source=${source.id} contest=${contestLabel} numero=${data.numero}`);
+
+      if (!winningResult || data.numero > winningResult.data.numero) {
+        winningResult = {
+          sourceId: source.id,
+          data,
+        };
+      }
+    } catch (error) {
+      const reason = getErrorMessage(error);
+      console.warn(`[lottery] fail source=${source.id} contest=${contestLabel} reason=${reason}`);
+      lastError = error instanceof Error ? error : new Error(reason);
+    }
+  }
+
+  if (winningResult) {
+    const cached = getLatestContest();
+    if (cached && winningResult.data.numero < cached.numero) {
+      console.warn(`[lottery] API returned older contest (${winningResult.data.numero}) than cached (${cached.numero}), using cache`);
+      return cached;
+    }
+
+    const persisted = setAppState(LAST_SUCCESSFUL_SOURCE_KEY, winningResult.sourceId);
+    console.log(`[lottery] success source=${winningResult.sourceId} contest=${contestLabel} numero=${winningResult.data.numero} persisted_priority=${persisted}`);
+    return winningResult.data;
+  }
+
+  throw lastError ?? new Error("Todas as APIs de loteria estão indisponíveis. Tente novamente mais tarde.");
+}
+
 export async function fetchContestFromApi(contestNumber = ""): Promise<ContestData> {
   validateContestNumber(contestNumber);
 
-  const contestLabel = contestNumber === "" ? "latest" : contestNumber;
+  if (contestNumber === "") {
+    return fetchLatestContestFromApi();
+  }
+
+  const contestLabel = contestNumber;
   let lastError: Error | null = null;
 
   for (const source of getOrderedSourceDefinitions()) {

@@ -13,6 +13,14 @@
 import { execSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import process from "process";
+import * as dotenv from "dotenv";
+import * as path from "path";
+
+// Paths
+const PROJECT_ROOT = "/home/ubuntu/projects/web/loteca";
+
+// Load environment variables from .env.production
+dotenv.config({ path: path.resolve(PROJECT_ROOT, ".env.production") });
 
 import { loadBets, getBetsForContest } from "../src/lib/bets";
 import { saveContest, closeDb } from "../src/lib/db";
@@ -20,7 +28,6 @@ import { fetchContestFromApi } from "../src/lib/lottery";
 import type { ContestData } from "../src/lib/types";
 
 // Paths
-const PROJECT_ROOT = "/home/ubuntu/projects/web/loteca";
 const STATE_DIR = `${PROJECT_ROOT}/state`;
 const STATE_FILE = process.env.LOTECA_STATE_FILE || `${STATE_DIR}/ultimo_concurso.txt`;
 const SEND_NOTIFICATION_CMD = process.env.SEND_NOTIFICATION_CMD || "/home/ubuntu/projects/ops/config/send_notification";

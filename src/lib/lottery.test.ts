@@ -125,6 +125,39 @@ function makeLotoramaHtmlWithoutDrawDate(): string {
     .replace("<p>Sorteio realizado no dia <strong>25/04/2026</strong> em SÃO PAULO, SP</p>", "");
 }
 
+function makeLotoramaMarkdownText(overrides?: Partial<ContestData>): string {
+  const contest = {
+    ...makeContest(3001),
+    numero: 3001,
+    dataApuracao: "28/04/2026",
+    listaDezenas: ["01", "13", "32", "36", "43", "60"],
+    listaRateioPremio: [
+      { descricaoFaixa: "Sena", numeroDeGanhadores: 0, valorPremio: 0 },
+      { descricaoFaixa: "Quina", numeroDeGanhadores: 92, valorPremio: 41209.18 },
+      { descricaoFaixa: "Quadra", numeroDeGanhadores: 5877, valorPremio: 1063.34 },
+    ],
+    acumulado: true,
+    dataProximoConcurso: "30/04/2026",
+    valorEstimadoProximoConcurso: 130000000,
+    ...overrides,
+  };
+
+  return [
+    `# Resultado da MEGA-SENA concurso ${contest.numero} dia ${contest.dataApuracao}`,
+    "## Números Sorteados",
+    contest.listaDezenas.join("  "),
+    contest.acumulado ? "**ACUMULOU!**" : "**NÃO ACUMULOU!**",
+    "Estimativa de prêmio do próximo concurso",
+    `R$ ${contest.valorEstimadoProximoConcurso.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    `Próximo sorteio: ${contest.dataProximoConcurso}`,
+    "## Premiação",
+    "| Sena | 0 | R$ 0,00 |",
+    "| Quina | 92 | R$ 41.209,18 |",
+    "| Quadra | 5877 | R$ 1.063,34 |",
+    `Sorteio realizado no dia **${contest.dataApuracao}** em SÃO PAULO, SP`,
+  ].join("\n");
+}
+
 describe("Mega-Sena source priority", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -184,7 +217,7 @@ describe("Mega-Sena source priority", () => {
     await fetchContestFromApi("");
 
     expect(getOrderedSources()).toEqual(["guidi", "proxy", "lotorama", "caixa"]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.guidi.dev.br/loteria/megasena/ultimo",
       expect.any(Object),
@@ -217,6 +250,35 @@ describe("Mega-Sena source priority", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "https://lotorama.com.br/mega-sena/",
+      expect.any(Object),
+    );
+    expect(dbMocks.setAppState).toHaveBeenCalledWith(LAST_SUCCESSFUL_SOURCE_KEY, "lotorama");
+  });
+
+  it("keeps checking later sources on latest fetch when the preferred source is stale", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeJsonResponse(makeContest(3000)))
+      .mockResolvedValueOnce(makeHtmlResponse(makeLotoramaMarkdownText({ numero: 3001 })))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchContestFromApi("");
+
+    expect(result.numero).toBe(3001);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://loteriascaixa-api.herokuapp.com/api/megasena/latest",
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
       "https://lotorama.com.br/mega-sena/",
       expect.any(Object),
     );
@@ -321,6 +383,108 @@ describe("Mega-Sena source priority", () => {
   });
 });
 
+describe("contest mismatch and resilience", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    dbMocks.getAppState.mockReset();
+    dbMocks.setAppState.mockReset();
+    dbMocks.getContest.mockReset();
+    dbMocks.getLatestContest.mockReset();
+    dbMocks.saveContest.mockReset();
+
+    dbMocks.getAppState.mockReturnValue(null);
+    dbMocks.setAppState.mockReturnValue(true);
+    dbMocks.saveContest.mockReturnValue(true);
+
+    vi.stubGlobal("setTimeout", ((callback: TimerHandler) => {
+      if (typeof callback === "function") callback();
+      return 0;
+    }) as typeof setTimeout);
+    vi.stubGlobal("clearTimeout", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects proxy API data when contest number does not match request", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    dbMocks.getAppState.mockReturnValue("proxy");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeJsonResponse({
+        concurso: 3000,
+        data: "25/04/2026",
+        dezenas: ["22", "23", "36", "40", "52", "60"],
+        premiacoes: [],
+        acumulou: true,
+      }))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchContestFromApi("3001")).rejects.toThrow();
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("fail source=proxy contest=3001 reason=contest mismatch expected=3001 got=3000"));
+  });
+
+  it("detects Cloudflare challenge HTML and fails fast", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    dbMocks.getAppState.mockReturnValue("lotorama");
+    const challengeHtml = '<!DOCTYPE html><html><head><title>Just a moment...</title></head><body><script>window._cf_chl_opt = {};</script></body></html>';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeHtmlResponse(challengeHtml))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503))
+      .mockResolvedValueOnce(makeStatusResponse(503));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchContestFromApi(""))
+      .rejects
+      .toThrow(/status 503/);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Cloudflare challenge detected"));
+  });
+
+  it("prefers cached data when API returns older contest number", async () => {
+    const cachedData = makeContest(3001);
+    dbMocks.getLatestContest.mockReturnValue(cachedData);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const fetchMock = vi.fn().mockResolvedValue(makeJsonResponse({
+      concurso: 3000,
+      data: "25/04/2026",
+      dezenas: ["22", "23", "36", "40", "52", "60"],
+      premiacoes: [],
+      acumulou: true,
+      dataProximoConcurso: "28/04/2026",
+      valorEstimadoProximoConcurso: 115000000,
+    }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchContestData("");
+
+    expect(result.numero).toBe(3001);
+    expect(dbMocks.getLatestContest).toHaveBeenCalled();
+  });
+});
+
 describe("fetchContestData cache policy", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -372,10 +536,9 @@ describe("fetchContestData cache policy", () => {
         { descricaoFaixa: "Sena", numeroDeGanhadores: 0, valorPremio: 0 },
       ],
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock).toHaveBeenCalledWith("https://loteriascaixa-api.herokuapp.com/api/megasena/latest", expect.any(Object));
     expect(dbMocks.saveContest).toHaveBeenCalled();
-    expect(dbMocks.getLatestContest).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("source=api"));
   });
 
@@ -441,6 +604,34 @@ describe("fetchContestData cache policy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dbMocks.saveContest).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("source=db"));
+  });
+
+  it("parses markdown-like Lotorama contest pages for specific contests", async () => {
+    dbMocks.getAppState.mockReturnValue("lotorama");
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeHtmlResponse(makeLotoramaMarkdownText()));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchContestFromApi("3001");
+
+    expect(result).toEqual({
+      numero: 3001,
+      dataApuracao: "28/04/2026",
+      listaDezenas: ["01", "13", "32", "36", "43", "60"],
+      listaRateioPremio: [
+        { descricaoFaixa: "Sena", numeroDeGanhadores: 0, valorPremio: 0 },
+        { descricaoFaixa: "Quina", numeroDeGanhadores: 92, valorPremio: 41209.18 },
+        { descricaoFaixa: "Quadra", numeroDeGanhadores: 5877, valorPremio: 1063.34 },
+      ],
+      acumulado: true,
+      dataProximoConcurso: "30/04/2026",
+      valorEstimadoProximoConcurso: 130000000,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lotorama.com.br/resultado-megasena/3001/",
+      expect.any(Object),
+    );
   });
 });
 

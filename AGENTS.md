@@ -15,10 +15,11 @@ Key parts:
 ## Lottery API strategy
 
 Default fallback order (resilience, when there is no history):
-1. `https://loteriascaixa-api.herokuapp.com/api/megasena/` (`proxy`)
-2. `https://lotorama.com.br/mega-sena/` or `https://lotorama.com.br/resultado-megasena/{contest}/` (`lotorama`)
-3. `https://api.guidi.dev.br/loteria/megasena/` (`guidi`)
-4. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/` (`caixa`, always dead last)
+1. **Cloudflare Worker** (Caixa API via edge): `https://caixa-lottery-proxy.vcavichini.workers.dev/megasena/` (`caixa-worker`, requires `CAIXA_WORKER_URL` env var)
+2. `https://loteriascaixa-api.herokuapp.com/api/megasena/` (`proxy`)
+3. `https://lotorama.com.br/mega-sena/` or `https://lotorama.com.br/resultado-megasena/{contest}/` (`lotorama`)
+4. `https://api.guidi.dev.br/loteria/megasena/` (`guidi`)
+5. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/` (`caixa`, direct API, frequently blocked)
 
 Smart priority:
 - The last successful source is persisted in SQLite `app_state` as `lottery.last_successful_source`
@@ -59,7 +60,7 @@ updated_at TEXT
 ```
 
 Used by source priority persistence:
-- `lottery.last_successful_source` → `proxy|lotorama|guidi|caixa`
+- `lottery.last_successful_source` → `caixa-worker|proxy|lotorama|guidi|caixa`
 
 **bets** — one row per bet (normalized, human-readable)
 ```
@@ -90,6 +91,18 @@ Bets are managed directly in SQLite — there is no admin UI.
 - Imports `fetchContestFromApi` from `src/lib/lottery` (API-only, no DB fallback — must fail if APIs are down)
 
 Runs via `tsx` on a systemd timer: **Tue/Thu/Sat at 22:00 and 23:00 (America/Sao_Paulo)**.
+Note: When running manually (e.g., `npm run checker`), environment variables are not automatically loaded. `dotenv` must be used in the script to load `.env` files, or variables must be exported in the shell, as systemd normally handles this injection in production.
+
+## Cloudflare Worker (`caixa-lottery-proxy`)
+
+Transparent proxy for the Caixa API to avoid direct IP blocks. Deployed to `https://caixa-lottery-proxy.vcavichini.workers.dev/megasena/`.
+
+Configuration:
+- Worker code: `workers/caixa-proxy/index.ts`
+- Wrangler config: `workers/caixa-proxy/wrangler.toml`
+- URL env var: `CAIXA_WORKER_URL` (set in `.env.production`, `newloteca.service`, and `loteca-checker.service`)
+
+The worker is the first source tried in the fallback chain. If the env var is not set, the worker is skipped and the next source is tried. On successful fetch from the worker, it becomes the persisted priority source for the next run.
 
 ## Node.js version
 
