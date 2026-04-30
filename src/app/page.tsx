@@ -40,6 +40,8 @@ export default async function Home({ searchParams }: HomeProps) {
             </div>
 
             <div className={styles.navRow}>
+              <span className={styles.navSpacer} />
+
               {contestData.numero > 1 ? (
                 <Link className={styles.navButton} href={`/?concurso=${contestData.numero - 1}`}>
                   {contestData.numero - 1}
@@ -55,6 +57,14 @@ export default async function Home({ searchParams }: HomeProps) {
               {contestData.numero < latestContestNumber ? (
                 <Link className={styles.navButton} href={`/?concurso=${contestData.numero + 1}`}>
                   {contestData.numero + 1}
+                </Link>
+              ) : (
+                <span className={styles.navSpacer} />
+              )}
+
+              {contestData.numero < latestContestNumber ? (
+                <Link className={styles.navButton} href="/">
+                  »
                 </Link>
               ) : (
                 <span className={styles.navSpacer} />

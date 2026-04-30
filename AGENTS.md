@@ -14,17 +14,9 @@ Key parts:
 
 ## Lottery API strategy
 
-Default fallback order (resilience, when there is no history):
-1. **Cloudflare Worker** (Caixa API via edge): `https://caixa-lottery-proxy.vcavichini.workers.dev/megasena/` (`caixa-worker`, requires `CAIXA_WORKER_URL` env var)
-2. `https://loteriascaixa-api.herokuapp.com/api/megasena/` (`proxy`)
-3. `https://lotorama.com.br/mega-sena/` or `https://lotorama.com.br/resultado-megasena/{contest}/` (`lotorama`)
-4. `https://api.guidi.dev.br/loteria/megasena/` (`guidi`)
-5. `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/` (`caixa`, direct API, frequently blocked)
-
-Smart priority:
-- The last successful source is persisted in SQLite `app_state` as `lottery.last_successful_source`
-- On the next execution, that source is tried first and the remaining sources keep the default relative order
-- Web app and checker share the exact same source ordering via `src/lib/lottery.ts`
+- Default: **Cloudflare Worker** (Caixa API via edge): `https://caixa-lottery-proxy.vcavichini.workers.dev/megasena/` (`caixa-worker`, requires `CAIXA_WORKER_URL` env var).
+- Fallback: DB (SQLite) only if Worker fails.
+- All other external proxies (Guidi, Lotorama, Heroku) removed for performance/reliability.
 
 ## Cache policy (source of truth for behavior)
 
@@ -88,7 +80,7 @@ Bets are managed directly in SQLite — there is no admin UI.
 `scripts/loteca-checker.ts` shares all logic with the web app via `src/lib/`:
 - Imports `loadBets`, `getBetsForContest` from `src/lib/bets`
 - Imports `saveContest`, `closeDb` from `src/lib/db`
-- Imports `fetchContestFromApi` from `src/lib/lottery` (API-only, no DB fallback — must fail if APIs are down)
+- Imports `fetchContestFromApi` from `src/lib/lottery` (API-only, no DB fallback for checking — must fail if Worker is down to avoid false negatives)
 
 Runs via `tsx` on a systemd timer: **Tue/Thu/Sat at 22:00 and 23:00 (America/Sao_Paulo)**.
 Note: When running manually (e.g., `npm run checker`), environment variables are not automatically loaded. `dotenv` must be used in the script to load `.env` files, or variables must be exported in the shell, as systemd normally handles this injection in production.
@@ -102,7 +94,7 @@ Configuration:
 - Wrangler config: `workers/caixa-proxy/wrangler.toml`
 - URL env var: `CAIXA_WORKER_URL` (set in `.env.production`, `newloteca.service`, and `loteca-checker.service`)
 
-The worker is the first source tried in the fallback chain. If the env var is not set, the worker is skipped and the next source is tried. On successful fetch from the worker, it becomes the persisted priority source for the next run.
+The worker is the only source used. If the env var is not set, the app fails. On successful fetch, it persists as the database source.
 
 ## Node.js version
 

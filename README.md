@@ -52,11 +52,10 @@ Apostas são gerenciadas diretamente no banco (sem interface admin). O campo `nu
 - **Concurso mais recente**: sempre busca na API externa, salva no banco, usa banco como fallback
 - **Concurso específico por número**: busca no banco primeiro; consulta API somente em cache miss
 
-Fontes externas compartilhadas pelo web app e pelo checker:
-- Ordem base sem histórico: `proxy -> lotorama -> guidi -> caixa`
-- `lotorama` usa `https://lotorama.com.br/mega-sena/` para o último concurso e `https://lotorama.com.br/resultado-megasena/{concurso}/` para concursos específicos
-- A última fonte bem-sucedida é persistida em `app_state.key='lottery.last_successful_source'` e sobe para o primeiro lugar na próxima execução
-- A API bruta da Caixa (`servicebus2`) continua disponível apenas como último fallback
+Fontes externas:
+- **Cloudflare Worker** (`caixa-worker`): fonte única e oficial (proxy edge para a API da Caixa), evita bloqueios de IP. URL configurada via `CAIXA_WORKER_URL` em `.env.production` e nos services systemd. Se a env var não estiver presente, a consulta falha.
+- Fallback local: se a API estiver fora, o app usa o último concurso salvo no banco SQLite.
+- Removido fallback exaustivo (Guidi, Lotorama, Proxy Heroku) para otimizar performance e confiabilidade.
 
 ## Deploy (homelab)
 
