@@ -2,15 +2,15 @@
 
 ## Overview
 
-Next.js 16 app for Mega-Sena tracking and personal bets.
+Hono app (Zero Build) for Mega-Sena tracking and personal bets. 
+Runs directly from source using `tsx` to eliminate build steps.
 
 Key parts:
-- Web app: `src/app/`
+- Web server: `src/server.ts` (Hono)
+- UI Components: `src/components/` (JSX SSR)
 - Core logic: `src/lib/`
-- Lottery API routes: `src/app/api/contest/*`
 - Checker script: `scripts/loteca-checker.ts`
-- Single data store: `data/loteca.db` (SQLite — contests + bets)
-- Checker dedup state: `state/ultimo_concurso.txt`
+- Single data store: `data/loteca.db` (SQLite)
 
 ## Lottery API strategy
 

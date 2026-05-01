@@ -3,25 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "tsx watch src/server.ts",
+    "start": "node --import tsx src/server.ts",
     "test": "vitest run",
     "checker": "tsx scripts/loteca-checker.ts",
     "verify:runtime": "bash scripts/verify-runtime.sh"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.1",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.4.2",
-    "next": "^16.2.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "hono": "^4.12.16"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "22.15.17",
-    "@types/react": "19.1.2",
-    "@types/react-dom": "19.1.2",
     "tsx": "^4.21.0",
     "typescript": "5.8.3",
     "vitest": "3.1.3"
