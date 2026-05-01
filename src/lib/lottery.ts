@@ -2,7 +2,10 @@ import type { ContestData } from "@/lib/types";
 import { getErrorMessage, validateContestNumber } from "@/lib/validation";
 import { getAppState, getContest, getLatestContest, saveContest, setAppState } from "@/lib/db";
 
-const CAIXA_WORKER_URL = process.env.CAIXA_WORKER_URL ?? "";
+function getCaixaWorkerUrlBase(): string {
+  return process.env.CAIXA_WORKER_URL ?? "";
+}
+
 const API_TIMEOUT_MS = 5000;
 const MAX_RETRIES = 1;
 const BASE_DELAY_MS = 1000;
@@ -80,17 +83,24 @@ function validateContestDataOrThrow(data: ContestData): ContestData {
 }
 
 function buildCaixaWorkerUrl(contestNumber: string): string {
-  const base = CAIXA_WORKER_URL.replace(/\/+$/, "");
+  const base = getCaixaWorkerUrlBase().replace(/\/+$/, "");
   return contestNumber === "" ? `${base}/megasena` : `${base}/megasena/${contestNumber}`;
 }
 
 async function fetchFromCaixaWorker(contestNumber: string): Promise<ContestData> {
-  if (!CAIXA_WORKER_URL) throw new Error("CAIXA_WORKER_URL not configured");
-  const data = validateContestDataOrThrow(await fetchWithRetry<ContestData>(buildCaixaWorkerUrl(contestNumber), "json"));
-  if (contestNumber !== "" && data.numero !== Number(contestNumber)) {
-    throw new Error(`contest mismatch expected=${contestNumber} got=${data.numero}`);
+  const workerUrl = getCaixaWorkerUrlBase();
+  if (!workerUrl) throw new Error("CAIXA_WORKER_URL not configured");
+  const url = buildCaixaWorkerUrl(contestNumber);
+  try {
+    const data = validateContestDataOrThrow(await fetchWithRetry<ContestData>(url, "json"));
+    if (contestNumber !== "" && data.numero !== Number(contestNumber)) {
+      throw new Error(`contest mismatch expected=${contestNumber} got=${data.numero}`);
+    }
+    return data;
+  } catch (error) {
+    console.warn(`[lottery] fail source=caixa-worker contest=${contestNumber || "latest"} reason=${getErrorMessage(error)}`);
+    throw error;
   }
-  return data;
 }
 
 const SOURCE_REGISTRY: SourceDefinition[] = [
@@ -117,17 +127,24 @@ export async function fetchContestData(contestNumber = ""): Promise<ContestData>
   validateContestNumber(contestNumber);
   if (contestNumber !== "") {
     const cached = getContest(parseInt(contestNumber, 10));
-    if (cached) return cached;
+    if (cached) {
+      console.log(`[lottery] contest=${contestNumber} source=db strategy=db-first`);
+      return cached;
+    }
   }
 
   try {
     const data = await fetchContestFromApi(contestNumber);
     try { saveContest(data); } catch (e) { console.error("[lottery] Save fail:", e); }
+    console.log(`[lottery] contest=${contestNumber || "latest"} source=api strategy=${contestNumber !== "" ? "db-first" : "api-first"}`);
     return data;
   } catch (error) {
     if (contestNumber === "") {
         const cached = getLatestContest();
-        if (cached) return cached;
+        if (cached) {
+          console.log(`[lottery] contest=latest source=db strategy=api-first`);
+          return cached;
+        }
     }
     throw error;
   }

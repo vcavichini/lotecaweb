@@ -106,7 +106,7 @@ npm run checker
 
 ### Funcionamento
 
-1. Busca o último resultado via pipeline compartilhado de fontes externas (ordem dinâmica baseada na última fonte bem-sucedida; falha se todas estiverem fora do ar)
+1. Busca o último resultado via **Cloudflare Worker** (`caixa-worker`) — única fonte externa ativa
 2. Salva no banco SQLite antes do check de deduplicação
 3. Carrega apostas do banco (`data/loteca.db`, tabela `bets`)
 4. Compara apostas com o sorteio e formata mensagem
@@ -114,6 +114,8 @@ npm run checker
 6. Grava o número do concurso notificado em `state/ultimo_concurso.txt` (deduplicação)
 
 O checker compartilha todo o código de `src/lib/` com o web app — sem lógica duplicada.
+
+> **Importante:** O checker usa `fetchContestFromApi` (API-only, sem fallback para DB) para evitar falsos negativos. Se o Worker estiver fora do ar, o checker falha explicitamente.
 
 ### Timer systemd
 

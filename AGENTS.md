@@ -24,7 +24,7 @@ Implemented in `src/lib/lottery.ts`:
 - `fetchContestData("")` (latest): **API-first**, save to SQLite, fallback to DB only if APIs fail.
 - `fetchContestData("N")` (specific contest): **DB-first**, call API only on cache miss, then persist.
 
-Traceability logs use:
+Traceability logs (from `src/lib/lottery.ts`):
 - `source=db|api`
 - `strategy=db-first|api-first`
 
@@ -52,7 +52,7 @@ updated_at TEXT
 ```
 
 Used by source priority persistence:
-- `lottery.last_successful_source` → `caixa-worker|proxy|lotorama|guidi|caixa`
+- `lottery.last_successful_source` → `caixa-worker` (legacy values such as `proxy|lotorama|guidi|caixa` may exist from older runs but are no longer written)
 
 **bets** — one row per bet (normalized, human-readable)
 ```
