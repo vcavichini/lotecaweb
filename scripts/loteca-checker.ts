@@ -106,10 +106,19 @@ function buildMessage(
   results: Array<[string[], number]>,
   contestData: ContestData
 ): string {
+  const allPlayedNumbers = new Set<string>();
+  for (const [bet] of results) {
+    for (const n of bet) {
+      allPlayedNumbers.add(n);
+    }
+  }
+
+  const highlightedDraw = drawNumbers.map(n => (allPlayedNumbers.has(n) ? `[${n}]` : n)).join(" • ");
+
   const lines: string[] = [
     `🎰 Mega-Sena — Concurso ${contestNumber}`,
     `Data: ${date}`,
-    `Sorteio: ${drawNumbers.join(" • ")}`,
+    `Sorteio: ${highlightedDraw}`,
     "",
     "Seus jogos:",
   ];
