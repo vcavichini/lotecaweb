@@ -1,6 +1,6 @@
 import type { ContestData } from "@/lib/types";
 import { getErrorMessage, validateContestNumber } from "@/lib/validation";
-import { getAppState, getContest, getLatestContest, saveContest, setAppState } from "@/lib/db";
+import { getAppState, getContest, getContestCacheAge, getLatestContest, saveContest, setAppState } from "@/lib/db";
 
 function getCaixaWorkerUrlBase(): string {
   return process.env.CAIXA_WORKER_URL ?? "";
@@ -9,6 +9,7 @@ function getCaixaWorkerUrlBase(): string {
 const API_TIMEOUT_MS = 5000;
 const MAX_RETRIES = 1;
 const BASE_DELAY_MS = 1000;
+const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
 export const LAST_SUCCESSFUL_SOURCE_KEY = "lottery.last_successful_source";
 
 export type LotterySourceId = "caixa-worker";
@@ -128,6 +129,25 @@ export async function fetchContestData(contestNumber = ""): Promise<ContestData>
   if (contestNumber !== "") {
     const cached = getContest(parseInt(contestNumber, 10));
     if (cached) {
+      const updatedAt = getContestCacheAge(parseInt(contestNumber, 10));
+      if (updatedAt) {
+        // SQLite datetime('now') returns 'YYYY-MM-DD HH:MM:SS'. We convert to ISO UTC for parsing.
+        const dateStr = updatedAt.includes('T') ? updatedAt : updatedAt.replace(' ', 'T') + 'Z';
+        const ageMs = Date.now() - new Date(dateStr).getTime();
+        if (ageMs > STALE_THRESHOLD_MS) {
+          console.log(`[lottery] ⚠️ cache stale contest=${contestNumber} age=${Math.round(ageMs / 3600000)}h`);
+          try {
+            const freshData = await fetchContestFromApi(contestNumber);
+            try { saveContest(freshData); } catch (e) { console.error("[lottery] Save fail:", e); }
+            console.log(`[lottery] contest=${contestNumber} source=api strategy=db-first-stale-refresh`);
+            return freshData;
+          } catch (apiError) {
+            console.warn(`[lottery] stale refresh failed, returning stale cache contest=${contestNumber} error=${getErrorMessage(apiError)}`);
+            console.log(`[lottery] contest=${contestNumber} source=db strategy=db-first-stale-fallback`);
+            return cached;
+          }
+        }
+      }
       console.log(`[lottery] contest=${contestNumber} source=db strategy=db-first`);
       return cached;
     }

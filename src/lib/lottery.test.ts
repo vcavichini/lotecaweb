@@ -6,6 +6,7 @@ const dbMocks = vi.hoisted(() => ({
   getAppState: vi.fn(),
   setAppState: vi.fn(),
   getContest: vi.fn(),
+  getContestCacheAge: vi.fn(),
   getLatestContest: vi.fn(),
   saveContest: vi.fn(),
 }));
@@ -145,6 +146,7 @@ describe("fetchContestData cache policy", () => {
     dbMocks.getAppState.mockReset();
     dbMocks.setAppState.mockReset();
     dbMocks.getContest.mockReset();
+    dbMocks.getContestCacheAge.mockReset();
     dbMocks.getLatestContest.mockReset();
     dbMocks.saveContest.mockReset();
     dbMocks.getAppState.mockReturnValue(null);
@@ -208,6 +210,8 @@ describe("fetchContestData cache policy", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const cachedData = makeContest(2999);
     dbMocks.getContest.mockReturnValue(cachedData);
+    // Cache is fresh (1 hour old)
+    dbMocks.getContestCacheAge.mockReturnValue(new Date(Date.now() - 3600000).toISOString());
 
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -220,6 +224,47 @@ describe("fetchContestData cache policy", () => {
     expect(dbMocks.saveContest).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("source=db"));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("strategy=db-first"));
+  });
+
+  it("specific contest path refreshes stale cache via API when older than 48h", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cachedData = makeContest(2999);
+    const freshData = makeContest(2999);
+    freshData.listaDezenas = ["01", "02", "03", "04", "05", "06"];
+    dbMocks.getContest.mockReturnValue(cachedData);
+    // Cache is 72 hours old (stale)
+    dbMocks.getContestCacheAge.mockReturnValue(new Date(Date.now() - 72 * 3600000).toISOString());
+    dbMocks.saveContest.mockReturnValue(true);
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeJsonResponse(freshData));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchContestData("2999");
+
+    expect(result.listaDezenas).toEqual(["01", "02", "03", "04", "05", "06"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(dbMocks.saveContest).toHaveBeenCalledWith(freshData);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("cache stale"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("strategy=db-first-stale-refresh"));
+  });
+
+  it("specific contest path falls back to stale cache when API fails on stale refresh", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cachedData = makeContest(2999);
+    dbMocks.getContest.mockReturnValue(cachedData);
+    // Cache is 72 hours old (stale)
+    dbMocks.getContestCacheAge.mockReturnValue(new Date(Date.now() - 72 * 3600000).toISOString());
+
+    const fetchMock = vi.fn().mockRejectedValue(new Error("API offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchContestData("2999");
+
+    expect(result).toEqual(cachedData);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 1 initial + 1 retry
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("stale refresh failed"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("strategy=db-first-stale-fallback"));
   });
 
   it("specific contest path calls API on DB miss, saves, logs source=api", async () => {

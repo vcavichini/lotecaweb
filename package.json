@@ -6,6 +6,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "node --import tsx src/server.ts",
     "test": "vitest run",
+    "build": "tsc --noEmit",
     "checker": "tsx scripts/loteca-checker.ts",
     "verify:runtime": "bash scripts/verify-runtime.sh"
   },
