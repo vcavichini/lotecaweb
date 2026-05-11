@@ -8,11 +8,12 @@ import { getBetsForContest, loadBets } from './lib/bets'
 import { getErrorMessage } from './lib/validation'
 
 const app = new Hono()
+const route = new Hono()
 
-app.use('*', logger())
+route.use('*', logger())
 
 // Home Route
-app.get('/', async (c) => {
+route.get('/', async (c) => {
   const contest = c.req.query('concurso') || ''
   
   try {
@@ -42,7 +43,7 @@ app.get('/', async (c) => {
 })
 
 // API Routes
-app.get('/api/contest/latest', async (c) => {
+route.get('/api/contest/latest', async (c) => {
   try {
     const data = await fetchContestData('')
     return c.json(data)
@@ -51,7 +52,7 @@ app.get('/api/contest/latest', async (c) => {
   }
 })
 
-app.get('/api/contest/:contestNumber', async (c) => {
+route.get('/api/contest/:contestNumber', async (c) => {
   try {
     const contestNumber = c.req.param('contestNumber')
     const data = await fetchContestData(contestNumber)
@@ -61,10 +62,14 @@ app.get('/api/contest/:contestNumber', async (c) => {
   }
 })
 
+app.route('/', route)
+app.route('/loteca', route)
+
 const port = 8126
 console.log(`Server is running on port ${port}`)
 
 serve({
   fetch: app.fetch,
+  hostname: '127.0.0.1',
   port
 })

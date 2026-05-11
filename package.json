@@ -3,23 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "node --import tsx src/server.ts",
-    "test": "vitest run",
-    "build": "tsc --noEmit",
-    "checker": "tsx scripts/loteca-checker.ts",
-    "verify:runtime": "bash scripts/verify-runtime.sh"
+    "dev": "bun run --hot src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test",
+    "build": "bun x tsc --noEmit",
+    "checker": "bun run scripts/loteca-checker.ts",
+    "verify:runtime": "bun --version"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.1",
-    "better-sqlite3": "^12.8.0",
     "dotenv": "^17.4.2",
     "hono": "^4.12.16"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "tsx": "^4.21.0",
-    "typescript": "5.8.3",
-    "vitest": "3.1.3"
+    "bun-types": "latest",
+    "typescript": "5.8.3"
   }
 }

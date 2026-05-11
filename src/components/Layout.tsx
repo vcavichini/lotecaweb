@@ -1,13 +1,21 @@
 /** @jsxImportSource hono/jsx */
 
-export const Layout = ({ children, title }: { children: any; title?: string }) => {
-  return (
-    <html lang="pt-BR">
-      <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>{title || 'NewLoteca Node'}</title>
-        <style dangerouslySetInnerHTML={{ __html: `
+export const Layout = ({
+	children,
+	title,
+}: {
+	children: any;
+	title?: string;
+}) => {
+	return (
+		<html lang="pt-BR">
+			<head>
+				<meta charset="UTF-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+				<title>{title || "NewLoteca Node"}</title>
+				<style
+					dangerouslySetInnerHTML={{
+						__html: `
           :root {
             --page-bg: #f4efe3;
             --panel-bg: rgba(255, 251, 242, 0.82);
@@ -277,11 +285,11 @@ export const Layout = ({ children, title }: { children: any; title?: string }) =
               text-align: center;
             }
           }
-        ` }} />
-      </head>
-      <body>
-        {children}
-      </body>
-    </html>
-  )
-}
+        `,
+					}}
+				/>
+			</head>
+			<body>{children}</body>
+		</html>
+	);
+};

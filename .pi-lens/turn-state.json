@@ -1,0 +1,48 @@
+{
+  "files": {
+    "src/lib/lottery.test.ts": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 318
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-05-11T14:19:22.599Z"
+    },
+    "src/lib/db.ts": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 371
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-05-11T14:19:22.470Z"
+    },
+    "src/lib/lottery.ts": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 241
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-05-11T15:24:17.077Z"
+    },
+    "src/components/Layout.tsx": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 296
+        }
+      ],
+      "importsChanged": false,
+      "lastEdit": "2026-05-11T15:17:36.027Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-05-11T15:24:17.077Z",
+  "sessionId": "lens-mp1bz548-aed49835"
+}
