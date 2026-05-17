@@ -1,37 +1,55 @@
 # Handoff
 
-Este projeto foi migrado de:
-
-- `/Users/vcavichini/dev/go/newloteca/newloteca-node`
-
-para:
-
-- `/Users/vcavichini/dev/node/newloteca-node`
-
 ## Estado atual
 
-- O app Node/Next.js já roda
-- O projeto está em `Next.js 16.2.1` com `React 19.2.4`
-- Home e admin já foram redesenhados
-- O login local está configurado via `.env.local`
-- Documentação de migração disponível em `docs/PLAN_NODE_MIGRACAO.md`
-- O app lê e grava `bets.json` na raiz desta pasta
+NewLoteca está migrado para Bun/Hono em modelo Zero-Build.
 
-## Ajustes já concluídos
+- Runtime: Bun
+- Framework: Hono
+- Porta local: `8126`
+- Serviço systemd: `newloteca.service`
+- Banco: SQLite em `data/loteca.db`
+- Rotas montadas em `/` e `/loteca`
 
-- O path de `src/lib/bets.ts` foi corrigido para usar `path.resolve(process.cwd(), "bets.json")`
-- O repositório Git local foi inicializado com `.gitignore` para `node_modules`, `.next`, `.env.local` e artefatos locais
+## Funcionalidades principais
 
-## Fluxos já validados
+- Consulta e cache de concursos da Mega-Sena.
+- Conferência de apostas permanentes e apostas por concurso.
+- Persistência em SQLite.
+- Checker operacional em `scripts/loteca-checker.ts`.
+- Tema claro/escuro com toggle minimalista de dia/noite em `src/components/Layout.tsx`.
 
-- Página inicial `/`
-- Login em `/admin/login`
-- Abertura inicial do admin
-- `npm test`
-- `npm run build`
+## Validação atual
 
-## Próximos passos recomendados
+Comandos esperados antes de deploy/commit:
 
-1. Validar inclusão, exclusão e salvamento na tela de admin usando o `bets.json` da raiz
-2. Fazer o primeiro commit local agora que o Git e o `.gitignore` já estão preparados
-3. Se necessário, adicionar testes para fluxos de persistência de `bets.json` e rotas admin
+```bash
+bun run build
+bun test
+```
+
+Última validação conhecida após ajuste de tema e setup Bun:
+
+- `bun run build` sem erros.
+- `bun test` com 32 testes passando.
+
+## Operação
+
+Status/restart do serviço:
+
+```bash
+systemctl --user status newloteca.service --no-pager
+systemctl --user restart newloteca.service
+```
+
+URLs:
+
+- Local: http://localhost:8126
+- Tailscale/proxy: https://homelab.tail95c76f.ts.net/loteca
+
+## Observações para próximos agentes
+
+- Não usar fluxos antigos de Next.js/npm neste projeto.
+- Preferir `bun` para scripts, testes e execução.
+- Não versionar segredos nem arquivos `.env*`.
+- Notificações operacionais devem seguir a política Bot API only para Discord.

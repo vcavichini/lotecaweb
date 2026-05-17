@@ -1,86 +1,87 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository.
+
+## Current stack
+
+NewLoteca is a Bun Zero-Build app using Hono and SQLite.
+
+- Runtime/test runner: Bun
+- Server framework: Hono
+- Database: SQLite (`data/loteca.db`)
+- Main server: `src/server.ts`
+- UI components: `src/components/`
+- Domain logic: `src/lib/`
+- Checker script: `scripts/loteca-checker.ts`
 
 ## Commands
 
 ```bash
-npm run dev        # Dev server at http://localhost:3000
-npm run build      # Production build
-npm start          # Serve production build
-npm test           # Run Vitest suite (Node environment)
-npm test -- src/lib/bets.test.ts  # Run a single test file
-npm run checker    # Run the loteca-checker script manually
-npm run verify:runtime  # Verify Node.js runtime matches .nvmrc / service expectation
+bun run dev       # Dev server at http://localhost:8126
+bun run start     # Production server
+bun run build     # TypeScript typecheck: tsc --noEmit
+bun test          # Run Bun test suite
+bun run checker   # Run the loteca-checker script manually
+bun run verify:runtime  # Print Bun version
 ```
 
-Node.js version is pinned in `.nvmrc`. Run `nvm use` before `npm install` or `npm test` — `better-sqlite3` is a native module and must be compiled for the active Node version. Mismatches cause test failures.
+Run before commits:
 
-Run `npm test` before commits and `npm run build` before opening a pull request.
+```bash
+bun run build
+bun test
+```
 
 ## Architecture
 
-Next.js 16 App Router app for checking Brazilian Mega-Sena lottery results. All source code is in `src/`:
+The app renders server-side JSX through Hono.
 
-- `src/app/` — routes, layouts, and API handlers (Next.js App Router conventions)
-- `src/lib/` — domain logic: `lottery.ts` (API fetch with 3-endpoint fallback), `db.ts` (SQLite — contests + bets), `bets.ts` (bets facade with auto-migration), `validation.ts`, `utils.ts`
-- `src/components/` — shared UI components
-- `scripts/loteca-checker.ts` — standalone notification script; shares `src/lib/` with the web app
+- `src/server.ts` mounts the same route app at `/` and `/loteca` for local and proxied access.
+- `src/components/Layout.tsx` owns the global HTML shell, CSS tokens, light/dark theme variables and theme toggle scripts.
+- `src/components/Home.tsx` renders contest results, bets, prize table and footer stats.
+- `src/lib/lottery.ts` fetches contest data from the Caixa worker and applies cache policy.
+- `src/lib/db.ts` manages SQLite persistence for contests, bets and app state.
+- `src/lib/bets.ts` is the public facade for loading/saving bets and resolving bets by contest.
+- `scripts/loteca-checker.ts` is the standalone operational checker used by automation.
 
-Tests are colocated with library code as `*.test.ts` (e.g., `src/lib/bets.test.ts`). Vitest runs in Node mode.
+## Theme behavior
 
-### Data flow
+The UI supports light and dark themes.
 
-1. Homepage (`src/app/page.tsx`, server component) calls `fetchContestData()` → checks SQLite → falls back to external APIs → renders results with bets overlay
-2. Bets are read/written to the `bets` table in `data/loteca.db` via `loadBets()`/`saveBets()` in `bets.ts`
-3. API routes under `src/app/api/` are thin wrappers around `src/lib/` functions
-4. `scripts/loteca-checker.ts` runs on a systemd timer (Tue/Thu/Sat 22:00 and 23:00 São Paulo time), saves to SQLite, and sends Discord notifications for new contests
+- Theme tokens live in `src/components/Layout.tsx` under `:root` and `html[data-theme="dark"]`.
+- A minimal fixed toggle button uses `☾` and `☀︎` to represent night/day.
+- The selected theme is stored in `localStorage`.
+- First access falls back to `prefers-color-scheme`.
+- A small head script sets `document.documentElement.dataset.theme` before paint to avoid theme flash.
 
-### SQLite (`data/loteca.db`)
+## TypeScript/Bun setup
 
-Single database file for all persistent state. Created automatically. `src/lib/db.ts` manages one shared connection and exports:
-- `getContest()`, `getLatestContest()`, `saveContest()`, `getContestCacheAge()` — contest cache
-- `getBets()`, `saveBets()` — bets storage (one row per bet: `numbers TEXT`, `type TEXT`, `contest INTEGER`)
+`tsconfig.json` explicitly loads Bun types via `"types": ["bun-types"]`, required for imports such as `bun:sqlite` and `bun:test`.
 
-DB errors are logged but never break requests. The checker saves to DB *before* the dedup check so the DB always reflects the latest API data.
+Production typecheck excludes colocated test files. Tests are still validated through `bun test`.
 
-Set `LOTECA_DB_PATH` env var to override the database path (used by tests to point at a temp file). Call `closeDb()` between tests to reset the singleton so the new path is picked up.
+## SQLite
 
-### Bets architecture
+`data/loteca.db` is the default database file. Set `LOTECA_DB_PATH` to override it, especially in tests.
 
-`bets.ts` is the public facade for bets — call `loadBets()` / `saveBets()` / `getBetsForContest()`. Internally it uses `getBets()`/`saveBets()` from `db.ts`.
+`src/lib/db.ts` manages a shared connection and exports helpers for contest cache, bets and app state.
 
-**Auto-migration**: on the first `loadBets()` call after deploy, if the `bets` table is empty and a `bets.json` file exists at `<cwd>/bets.json`, the file is read and written to SQLite automatically. No manual migration step needed.
+## Deploy / operations
 
-`bets-repository.ts` defines a `BetsRepository` interface with a JSON-file backend — used by contract tests and auto-migration, not by runtime code.
-
-`bets-path.ts` resolves the bets file path for migration only: respects `LOTECA_BETS_FILE` env var, otherwise `<cwd>/bets.json`.
-
-### Checker state
-
-- `data/loteca.db` — single source of truth for both contest cache and bets
-- `state/ultimo_concurso.txt` — last notified contest number (deduplication)
-
-## Coding Style
-
-TypeScript `strict` mode; `@/*` alias maps to `src/*`. Follow existing style: 2-space indentation, double quotes, semicolons, `PascalCase` components, `camelCase` functions. No ESLint/Prettier config is committed — match surrounding files.
-
-## Deploy (Critical)
-
-Next.js loads the build into memory at startup and does **not** hot-reload. After any `npm run build`:
+Service:
 
 ```bash
-npm run build && systemctl --user restart newloteca.service
+systemctl --user status newloteca.service --no-pager
+systemctl --user restart newloteca.service
+journalctl --user -u newloteca.service -n 100 --no-pager
 ```
 
-Skipping the restart causes the old build to keep serving, breaking client-side navigation in ways masked by CDN cache.
+After code changes, restart the service so the running Bun process picks up the new source:
 
-### Homelab ops
+```bash
+systemctl --user restart newloteca.service
+```
 
-- Service: `~/.config/systemd/user/newloteca.service` (binds `127.0.0.1:8126`)
-- Public URL via Cloudflare Tunnel: `https://newloteca.botlab.dev.br/`
-- Useful commands:
-  - `systemctl --user status newloteca.service --no-pager`
-  - `journalctl --user -u newloteca.service -n 100 --no-pager`
-  - `systemctl --user status loteca-checker.timer --no-pager`
-  - `journalctl --user -u loteca-checker.service -n 20 --no-pager`
+## Coding style
+
+TypeScript strict mode. Use the `@/*` alias for `src/*` where already established. Match surrounding style and prefer Bun commands over npm/node-specific workflows.

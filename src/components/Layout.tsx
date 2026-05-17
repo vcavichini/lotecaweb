@@ -13,6 +13,22 @@ export const Layout = ({
 				<meta charset="UTF-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 				<title>{title || "NewLoteca Node"}</title>
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `
+							(function () {
+								try {
+									var storedTheme = window.localStorage.getItem("theme");
+									var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+									var theme = storedTheme === "dark" || storedTheme === "light" ? storedTheme : prefersDark ? "dark" : "light";
+									document.documentElement.dataset.theme = theme;
+								} catch (error) {
+									document.documentElement.dataset.theme = "light";
+								}
+							})();
+						`,
+					}}
+				/>
 				<style
 					dangerouslySetInnerHTML={{
 						__html: `
@@ -272,6 +288,37 @@ export const Layout = ({
             background: linear-gradient(135deg, var(--danger), #7f2013);
           }
 
+          .themeToggle {
+            position: fixed;
+            z-index: 10;
+            top: 14px;
+            right: max(14px, calc((100vw - 420px) / 2 + 14px));
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--stroke);
+            border-radius: 999px;
+            background: var(--panel-bg);
+            box-shadow: var(--shadow);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 1.05rem;
+            line-height: 1;
+            backdrop-filter: blur(14px);
+            transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+          }
+
+          .themeToggle:hover {
+            transform: translateY(-1px);
+          }
+
+          .themeToggle:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+          }
+
           @media (max-width: 920px) {
             .betRow {
               justify-content: center;
@@ -289,7 +336,45 @@ export const Layout = ({
 					}}
 				/>
 			</head>
-			<body>{children}</body>
+			<body>
+				<button
+					id="themeToggle"
+					class="themeToggle"
+					type="button"
+					aria-label="Alternar entre tema claro e escuro"
+					title="Alternar tema"
+				>
+					☾
+				</button>
+				{children}
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `
+							(function () {
+								var button = document.getElementById("themeToggle");
+								if (!button) return;
+
+								function applyTheme(theme) {
+									document.documentElement.dataset.theme = theme;
+									button.textContent = theme === "dark" ? "☀︎" : "☾";
+									button.setAttribute("aria-label", theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro");
+									button.setAttribute("title", theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro");
+								}
+
+								applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+								button.addEventListener("click", function () {
+									var nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+									try {
+										window.localStorage.setItem("theme", nextTheme);
+									} catch (error) {}
+									applyTheme(nextTheme);
+								});
+							})();
+						`,
+					}}
+				/>
+			</body>
 		</html>
 	);
 };
