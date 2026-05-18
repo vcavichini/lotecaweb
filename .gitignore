@@ -35,3 +35,6 @@ data/*.db-wal
 
 tsconfig.tsbuildinfo
 state/
+
+# Local AI-agent scratch/cache
+.pi/
