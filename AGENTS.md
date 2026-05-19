@@ -26,7 +26,9 @@ Para garantir que o roteamento funcione tanto localmente quanto via proxy, as ro
 - O toggle visual deve permanecer minimalista e acessível, usando ícones de dia/noite (`☾` / `☀︎`).
 
 ## Notificações
-- Canal oficial: Discord (API Bot).
+- Canal oficial: Discord via `/home/ubuntu/projects/ops/config/send_notification`.
+- Para o conferidor, usar `--service loteca-checker`; o TOML central resolve a thread correta.
+- Não hardcodar IDs de canal/thread.
 - Não usar Webhooks.
 - Telegram desativado.
 

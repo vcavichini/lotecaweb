@@ -173,11 +173,11 @@ function resolveSenders(): Map<string, string> {
   const senders = new Map<string, string>();
 
   if (NOTIFY_CHANNEL === "discord") {
-    senders.set("discord", `${SEND_NOTIFICATION_CMD} --force-notification-to=discord --thread=loteca`);
+    senders.set("discord", `${SEND_NOTIFICATION_CMD} --force-notification-to=discord --service=loteca-checker`);
   } else if (NOTIFY_CHANNEL === "telegram") {
     senders.set("telegram", `${SEND_NOTIFICATION_CMD} --force-notification-to=telegram`);
   } else if (NOTIFY_CHANNEL === "both") {
-    senders.set("discord", `${SEND_NOTIFICATION_CMD} --force-notification-to=discord --thread=loteca`);
+    senders.set("discord", `${SEND_NOTIFICATION_CMD} --force-notification-to=discord --service=loteca-checker`);
     senders.set("telegram", `${SEND_NOTIFICATION_CMD} --force-notification-to=telegram`);
   } else {
     throw new Error("NOTIFY_CHANNEL inválido. Use discord|telegram|both");

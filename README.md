@@ -44,6 +44,12 @@ bun test          # suíte de testes Bun
 bun run checker   # execução manual do conferidor
 ```
 
+## Notificações
+
+- O conferidor usa `/home/ubuntu/projects/ops/config/send_notification --service loteca-checker`.
+- O roteamento Discord vem de `/home/ubuntu/projects/ops/config/notification-threads.toml`.
+- Não hardcodar IDs de canal/thread nem usar webhook Discord.
+
 Validação recomendada antes de commit/deploy:
 
 ```bash
